@@ -1,1 +1,3 @@
-<manifest package="com.humazed.google_map_location_picker" />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+  package="com.example.google_map_location_picker">
+</manifest>

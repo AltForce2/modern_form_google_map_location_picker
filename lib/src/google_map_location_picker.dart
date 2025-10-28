@@ -144,7 +144,7 @@ class LocationPickerState extends State<LocationPicker> {
                     S.of(context)?.finding_place ?? 'Finding place...',
                     style: TextStyle(fontSize: 16),
                   ),
-                )
+                ),
               ],
             ),
           ),
@@ -266,12 +266,7 @@ class LocationPickerState extends State<LocationPicker> {
       builder: (context) => Positioned(
         width: size.width,
         top: appBarBox!.size.height,
-        child: Material(
-          elevation: 1,
-          child: Column(
-            children: suggestions,
-          ),
-        ),
+        child: Material(elevation: 1, child: Column(children: suggestions)),
       ),
     );
 
@@ -283,20 +278,20 @@ class LocationPickerState extends State<LocationPicker> {
   /// that the user selects from the nearby list (and expects to see that as a
   /// result, instead of road name). If no name is found from the nearby list,
   /// then the road name returned is used instead.
-//  String getLocationName() {
-//    if (locationResult == null) {
-//      return "Unnamed location";
-//    }
-//
-//    for (NearbyPlace np in nearbyPlaces) {
-//      if (np.latLng == locationResult.latLng) {
-//        locationResult.name = np.name;
-//        return np.name;
-//      }
-//    }
-//
-//    return "${locationResult.name}, ${locationResult.locality}";
-//  }
+  //  String getLocationName() {
+  //    if (locationResult == null) {
+  //      return "Unnamed location";
+  //    }
+  //
+  //    for (NearbyPlace np in nearbyPlaces) {
+  //      if (np.latLng == locationResult.latLng) {
+  //        locationResult.name = np.name;
+  //        return np.name;
+  //      }
+  //    }
+  //
+  //    return "${locationResult.name}, ${locationResult.locality}";
+  //  }
 
   /// Fetches and updates the nearby places to the provided lat,lng
   void getNearbyPlaces(LatLng latLng) {
@@ -344,8 +339,10 @@ class LocationPickerState extends State<LocationPicker> {
             "&key=${widget.apiKey}" +
             "&language=${widget.language}";
 
-    final response = await http.get(Uri.parse(endpoint),
-        headers: await LocationPickerUtils.getAppHeaders());
+    final response = await http.get(
+      Uri.parse(endpoint),
+      headers: await LocationPickerUtils.getAppHeaders(),
+    );
 
     if (response.statusCode == 200) {
       Map<String, dynamic> responseJson = jsonDecode(response.body);
@@ -363,8 +360,8 @@ class LocationPickerState extends State<LocationPicker> {
         road = responseJson['results'][0]['address_components'][0]['long_name'];
       }
 
-//      String locality =
-//          responseJson['results'][0]['address_components'][1]['short_name'];
+      //      String locality =
+      //          responseJson['results'][0]['address_components'][1]['short_name'];
 
       setState(() {
         locationResult = LocationResult();
@@ -381,10 +378,7 @@ class LocationPickerState extends State<LocationPicker> {
     mapKey.currentState!.mapController.future.then((controller) {
       controller.animateCamera(
         CameraUpdate.newCameraPosition(
-          CameraPosition(
-            target: latLng,
-            zoom: 16,
-          ),
+          CameraPosition(target: latLng, zoom: 16),
         ),
       );
     });

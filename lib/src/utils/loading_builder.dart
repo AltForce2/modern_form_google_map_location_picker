@@ -16,8 +16,8 @@ class FutureLoadingBuilder<T> extends StatefulWidget {
     required this.builder,
     this.mutable = false,
     this.loadingIndicator,
-  })  : assert(builder != null),
-        super(key: key);
+  }) : assert(builder != null),
+       super(key: key);
 
   /// The asynchronous computation to which this builder is currently connected,
   /// possibly null.
