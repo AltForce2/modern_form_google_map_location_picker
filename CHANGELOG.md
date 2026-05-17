@@ -1,3 +1,7 @@
+## 9.1.0
+
+* Adicionada flag `embedded` em `LocationPicker`/`MapPicker` para renderizar o picker inline (sem `Scaffold`/`AppBar`, com bordas arredondadas, `SearchInput` como overlay, card de resultado compacto, FABs reposicionados e absorção de `PointerScrollEvent` para não rolar o `Scrollable` pai no desktop/web).
+
 ## 4.1.7
 
 * Updated deps to work with flutter stable 2.0.1

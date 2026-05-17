@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_map_location_picker/generated/l10n.dart';
@@ -44,6 +45,7 @@ class LocationPicker extends StatefulWidget {
     this.language,
     this.desiredAccuracy,
     this.searchInputEnabled,
+    this.embedded,
   });
 
   final String apiKey;
@@ -77,6 +79,12 @@ class LocationPicker extends StatefulWidget {
   final String? language;
 
   final LocationAccuracy? desiredAccuracy;
+
+  /// Quando `true`, renderiza o picker em modo compacto, sem `Scaffold`/`AppBar`,
+  /// com bordas arredondadas, card de localização menor e absorção do scroll
+  /// do mouse (evita que o scroll role um `Scrollable` pai no desktop/web).
+  /// O `SearchInput` é movido para o topo do mapa como overlay.
+  final bool? embedded;
 
   @override
   LocationPickerState createState() => LocationPickerState();
@@ -394,13 +402,138 @@ class LocationPickerState extends State<LocationPicker> {
     super.dispose();
   }
 
+  /// Absorve `PointerScrollEvent` (scroll do mouse no desktop/web) para que um
+  /// `Scrollable` pai não role enquanto o usuário está dando zoom no mapa.
+  /// No mobile o zoom é via pinch (gesture normal), então este filtro não
+  /// interfere com o comportamento esperado.
+  void _absorbWheelScroll(PointerSignalEvent event) {
+    if (event is PointerScrollEvent) {
+      GestureBinding.instance.pointerSignalResolver.register(event, (_) {});
+    }
+  }
+
+  /// Reivindica gestos de pan/scale originados no **trackpad** (two-finger
+  /// scroll, pinch-to-zoom em notebooks). Sem isto, o `Scrollable` pai
+  /// vence a arena e rola a tela em vez de deixar o mapa fazer o zoom.
+  ///
+  /// Limitar via `supportedDevices: {PointerDeviceKind.trackpad}` é
+  /// proposital: em **mobile** o pinch chega via touch direto na superfície
+  /// nativa do `GoogleMap` (platform view) e não passa pela gesture arena
+  /// do Flutter, então mantemos o comportamento original; em **desktop/web**
+  /// o mapa recebe pinch/scroll via WebView (JS Google Maps API), também
+  /// fora da arena do Flutter — interceptar aqui só evita que o pai role.
+  Map<Type, GestureRecognizerFactory> _trackpadClaimRecognizers() {
+    return <Type, GestureRecognizerFactory>{
+      ScaleGestureRecognizer: GestureRecognizerFactoryWithHandlers<
+          ScaleGestureRecognizer>(
+        () => ScaleGestureRecognizer(
+          supportedDevices: const <PointerDeviceKind>{
+            PointerDeviceKind.trackpad,
+          },
+        ),
+        (ScaleGestureRecognizer recognizer) {
+          recognizer
+            ..onStart = (_) {}
+            ..onUpdate = (_) {}
+            ..onEnd = (_) {};
+        },
+      ),
+      PanGestureRecognizer:
+          GestureRecognizerFactoryWithHandlers<PanGestureRecognizer>(
+        () => PanGestureRecognizer(
+          supportedDevices: const <PointerDeviceKind>{
+            PointerDeviceKind.trackpad,
+          },
+        ),
+        (PanGestureRecognizer recognizer) {
+          recognizer
+            ..onStart = (_) {}
+            ..onUpdate = (_) {}
+            ..onEnd = (_) {};
+        },
+      ),
+    };
+  }
+
+  bool get _searchInputVisible =>
+      widget.searchInputEnabled == null || widget.searchInputEnabled == true;
+
+  Widget _buildSearchInput() {
+    return SearchInput(
+      (input) => searchPlace(input),
+      key: searchInputKey,
+      boxDecoration: widget.searchBarBoxDecoration,
+      hintText: widget.hintText,
+    );
+  }
+
+  MapPicker _buildMapPicker() {
+    return MapPicker(
+      widget.apiKey,
+      webMapsApiKey: widget.webMapsApiKey,
+      initialCenter: widget.initialCenter,
+      initialZoom: widget.initialZoom,
+      requiredGPS: widget.requiredGPS,
+      myLocationButtonEnabled: widget.myLocationButtonEnabled,
+      layersButtonEnabled: widget.layersButtonEnabled,
+      automaticallyAnimateToCurrentLocation:
+          widget.automaticallyAnimateToCurrentLocation,
+      mapStylePath: widget.mapStylePath,
+      appBarColor: widget.appBarColor,
+      pinColor: widget.pinColor,
+      searchBarBoxDecoration: widget.searchBarBoxDecoration,
+      hintText: widget.hintText,
+      resultCardConfirmIcon: widget.resultCardConfirmIcon,
+      resultCardAlignment: widget.resultCardAlignment,
+      resultCardDecoration: widget.resultCardDecoration,
+      resultCardPadding: widget.resultCardPadding,
+      key: mapKey,
+      language: widget.language,
+      desiredAccuracy: widget.desiredAccuracy,
+      embedded: widget.embedded,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final bool embedded = widget.embedded == true;
+
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => LocationProvider()),
       ],
       child: Builder(builder: (context) {
+        if (embedded) {
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Listener(
+              onPointerSignal: _absorbWheelScroll,
+              child: RawGestureDetector(
+                behavior: HitTestBehavior.translucent,
+                gestures: _trackpadClaimRecognizers(),
+                child: Stack(
+                  children: [
+                    Positioned.fill(child: _buildMapPicker()),
+                    if (_searchInputVisible)
+                      Positioned(
+                        top: 8,
+                        left: 8,
+                        right: 8,
+                        child: Container(
+                          key: appBarKey,
+                          child: Material(
+                            color: Colors.transparent,
+                            child: _buildSearchInput(),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+
         return Scaffold(
           extendBodyBehindAppBar: true,
           appBar: AppBar(
@@ -408,39 +541,9 @@ class LocationPickerState extends State<LocationPicker> {
             elevation: 0,
             backgroundColor: widget.appBarColor,
             key: appBarKey,
-            title: widget.searchInputEnabled == null ||
-                    widget.searchInputEnabled == true
-                ? SearchInput(
-                    (input) => searchPlace(input),
-                    key: searchInputKey,
-                    boxDecoration: widget.searchBarBoxDecoration,
-                    hintText: widget.hintText,
-                  )
-                : null,
+            title: _searchInputVisible ? _buildSearchInput() : null,
           ),
-          body: MapPicker(
-            widget.apiKey,
-            webMapsApiKey: widget.webMapsApiKey,
-            initialCenter: widget.initialCenter,
-            initialZoom: widget.initialZoom,
-            requiredGPS: widget.requiredGPS,
-            myLocationButtonEnabled: widget.myLocationButtonEnabled,
-            layersButtonEnabled: widget.layersButtonEnabled,
-            automaticallyAnimateToCurrentLocation:
-                widget.automaticallyAnimateToCurrentLocation,
-            mapStylePath: widget.mapStylePath,
-            appBarColor: widget.appBarColor,
-            pinColor: widget.pinColor,
-            searchBarBoxDecoration: widget.searchBarBoxDecoration,
-            hintText: widget.hintText,
-            resultCardConfirmIcon: widget.resultCardConfirmIcon,
-            resultCardAlignment: widget.resultCardAlignment,
-            resultCardDecoration: widget.resultCardDecoration,
-            resultCardPadding: widget.resultCardPadding,
-            key: mapKey,
-            language: widget.language,
-            desiredAccuracy: widget.desiredAccuracy,
-          ),
+          body: _buildMapPicker(),
         );
       }),
     );

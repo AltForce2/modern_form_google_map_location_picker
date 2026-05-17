@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/widgets.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' show LatLng, MapType;
 
@@ -13,6 +15,7 @@ abstract class LocationPickerMapInterface {
     required VoidCallback onCameraIdle,
     required VoidCallback onCameraMoveStarted,
     required VoidCallback onMapReady,
+    Set<Factory<OneSequenceGestureRecognizer>>? gestureRecognizers,
   });
 
   Future<void> animateCamera(LatLng target, double zoom);

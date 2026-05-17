@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/widgets.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
@@ -20,6 +22,7 @@ class LocationPickerMapNative implements LocationPickerMapInterface {
     required VoidCallback onCameraIdle,
     required VoidCallback onCameraMoveStarted,
     required VoidCallback onMapReady,
+    Set<Factory<OneSequenceGestureRecognizer>>? gestureRecognizers,
   }) {
     return GoogleMap(
       myLocationButtonEnabled: false,
@@ -27,6 +30,7 @@ class LocationPickerMapNative implements LocationPickerMapInterface {
       style: mapStyleJson,
       mapType: mapType,
       myLocationEnabled: myLocationEnabled,
+      gestureRecognizers: gestureRecognizers ?? const <Factory<OneSequenceGestureRecognizer>>{},
       onMapCreated: (controller) {
         _controller = controller;
         if (!_completer.isCompleted) _completer.complete(controller);

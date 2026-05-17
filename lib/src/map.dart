@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
@@ -40,6 +42,7 @@ class MapPicker extends StatefulWidget {
     this.resultCardPadding,
     this.language,
     this.desiredAccuracy,
+    this.embedded,
   }) : super(key: key);
 
   final String apiKey;
@@ -71,6 +74,11 @@ class MapPicker extends StatefulWidget {
   final String? language;
 
   final LocationAccuracy? desiredAccuracy;
+
+  /// Renderiza o picker em modo compacto (sem Scaffold de fundo, FABs reposicionados,
+  /// card de resultado menor). Tipicamente acionado pelo `LocationPicker` quando
+  /// `embedded == true`.
+  final bool? embedded;
 
   @override
   MapPickerState createState() => MapPickerState();
@@ -149,6 +157,8 @@ class MapPickerState extends State<MapPicker> {
     super.dispose();
   }
 
+  bool get _isEmbedded => widget.embedded == true;
+
   @override
   Widget build(BuildContext context) {
     if (widget.requiredGPS!) {
@@ -158,23 +168,42 @@ class MapPickerState extends State<MapPicker> {
 
     if (_currentPosition != null && dialogOpen != null) Navigator.of(context, rootNavigator: true).pop();
 
+    final Widget body = Builder(
+      builder: (context) {
+        if (_currentPosition == null && widget.automaticallyAnimateToCurrentLocation! && widget.requiredGPS!) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        return buildMap();
+      },
+    );
+
+    if (_isEmbedded) {
+      // Sem SafeArea/Scaffold: o widget é desenhado inline dentro do layout do
+      // consumidor (que controla padding/altura).
+      return body;
+    }
+
     return SafeArea(
       bottom: true,
-      child: Scaffold(
-        body: Builder(
-          builder: (context) {
-            if (_currentPosition == null && widget.automaticallyAnimateToCurrentLocation! && widget.requiredGPS!) {
-              return const Center(child: CircularProgressIndicator());
-            }
-
-            return buildMap();
-          },
-        ),
-      ),
+      child: Scaffold(body: body),
     );
   }
 
   Widget buildMap() {
+    // Em modo embedded, deixamos o widget de mapa vencer a arena de gestos
+    // imediatamente — isso impede que um Scrollable pai roube gestos de pan/
+    // zoom (notadamente scroll de dois dedos no touchpad, que vem como
+    // PointerPanZoom*Event e não é capturado pelo onPointerSignal do Listener).
+    final Set<Factory<OneSequenceGestureRecognizer>>? mapGestureRecognizers =
+        _isEmbedded
+            ? <Factory<OneSequenceGestureRecognizer>>{
+                Factory<OneSequenceGestureRecognizer>(
+                  () => EagerGestureRecognizer(),
+                ),
+              }
+            : null;
+
     return Center(
       child: Stack(
         children: <Widget>[
@@ -184,6 +213,7 @@ class MapPickerState extends State<MapPicker> {
             mapType: _currentMapType,
             mapStyleJson: _mapStyle,
             myLocationEnabled: true,
+            gestureRecognizers: mapGestureRecognizers,
             onCameraMove: (target) => _lastMapPosition = target,
             onCameraIdle: () {
               debugPrint("onCameraIdle#_lastMapPosition = $_lastMapPosition");
@@ -202,6 +232,7 @@ class MapPickerState extends State<MapPicker> {
             layersButtonEnabled: widget.layersButtonEnabled,
             onToggleMapTypePressed: _onToggleMapTypePressed,
             onMyLocationPressed: _initCurrentLocation,
+            embedded: _isEmbedded,
           ),
           pin(),
           locationCard(),
@@ -211,16 +242,52 @@ class MapPickerState extends State<MapPicker> {
   }
 
   Widget locationCard() {
+    final bool embedded = _isEmbedded;
+
+    // Em modo embedded reservamos espaço à direita para os controles nativos
+    // do Google Maps (zoom +/-, Street View, etc.) que ficam ancorados no
+    // canto inferior direito.
+    final EdgeInsets outerPadding = widget.resultCardPadding ??
+        (embedded
+            ? const EdgeInsets.only(left: 8, right: 64, top: 8, bottom: 8)
+            : const EdgeInsets.all(16.0));
+
+    final EdgeInsets innerPadding = embedded
+        ? const EdgeInsets.symmetric(horizontal: 12, vertical: 8)
+        : const EdgeInsets.all(16.0);
+
+    final double fontSize = embedded ? 13 : 18;
+    final int maxLines = embedded ? 2 : 1;
+
     return Align(
       alignment: widget.resultCardAlignment ?? Alignment.bottomCenter,
       child: Padding(
-        padding: widget.resultCardPadding ?? EdgeInsets.all(16.0),
+        padding: outerPadding,
         child: Card(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           child: Consumer<LocationProvider>(
             builder: (context, locationProvider, _) {
+              final Widget confirmButton = embedded
+                  ? SizedBox(
+                      width: 40,
+                      height: 40,
+                      child: FloatingActionButton(
+                        heroTag: 'mapPickerConfirm',
+                        mini: true,
+                        onPressed: () => _popResult(locationProvider),
+                        child: widget.resultCardConfirmIcon ??
+                            const Icon(Icons.arrow_forward, size: 20),
+                      ),
+                    )
+                  : FloatingActionButton(
+                      heroTag: 'mapPickerConfirm',
+                      onPressed: () => _popResult(locationProvider),
+                      child: widget.resultCardConfirmIcon ??
+                          const Icon(Icons.arrow_forward),
+                    );
+
               return Padding(
-                padding: const EdgeInsets.all(16.0),
+                padding: innerPadding,
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: <Widget>[
@@ -229,7 +296,7 @@ class MapPickerState extends State<MapPicker> {
                       child: FutureLoadingBuilder<Map<String, String?>?>(
                         future: getAddress(locationProvider.lastIdleLocation),
                         mutable: true,
-                        loadingIndicator: Row(
+                        loadingIndicator: const Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: <Widget>[CircularProgressIndicator()],
                         ),
@@ -238,25 +305,15 @@ class MapPickerState extends State<MapPicker> {
                           _placeId = data["placeId"];
                           return Text(
                             _address ?? S.of(context)?.unnamedPlace ?? 'Unnamed place',
-                            style: TextStyle(fontSize: 18),
+                            style: TextStyle(fontSize: fontSize),
+                            maxLines: maxLines,
+                            overflow: TextOverflow.ellipsis,
                           );
                         },
                       ),
                     ),
-                    Spacer(),
-                    FloatingActionButton(
-                      onPressed: () {
-                        Navigator.of(context).pop({
-                          'location': LocationResult(
-                            latLng: locationProvider.lastIdleLocation,
-                            address: _address,
-                            placeId: _placeId,
-                            locationAdress: _locationAdress,
-                          ),
-                        });
-                      },
-                      child: widget.resultCardConfirmIcon ?? Icon(Icons.arrow_forward),
-                    ),
+                    const Spacer(),
+                    confirmButton,
                   ],
                 ),
               );
@@ -265,6 +322,17 @@ class MapPickerState extends State<MapPicker> {
         ),
       ),
     );
+  }
+
+  void _popResult(LocationProvider locationProvider) {
+    Navigator.of(context).pop({
+      'location': LocationResult(
+        latLng: locationProvider.lastIdleLocation,
+        address: _address,
+        placeId: _placeId,
+        locationAdress: _locationAdress,
+      ),
+    });
   }
 
   Future<Map<String, String?>?> getAddress(LatLng? location) async {
@@ -439,19 +507,27 @@ class _MapFabs extends StatelessWidget {
     required this.layersButtonEnabled,
     required this.onToggleMapTypePressed,
     required this.onMyLocationPressed,
+    this.embedded = false,
   }) : super(key: key);
 
   final bool? myLocationButtonEnabled;
   final bool? layersButtonEnabled;
+  final bool embedded;
 
   final VoidCallback onToggleMapTypePressed;
   final VoidCallback onMyLocationPressed;
 
   @override
   Widget build(BuildContext context) {
+    // Em modo embedded o SearchInput é renderizado como overlay (~56px de
+    // altura) com 8px de margem do topo do mapa, então os fabs precisam
+    // descer ~72px para não sobrepor o campo de busca nem os controles
+    // nativos do Google Maps.
+    final double topMargin = embedded ? 72 : kToolbarHeight + 80;
+
     return Container(
       alignment: Alignment.topRight,
-      margin: const EdgeInsets.only(top: kToolbarHeight + 80, right: 8),
+      margin: EdgeInsets.only(top: topMargin, right: 8),
       child: Column(
         children: <Widget>[
           if (layersButtonEnabled!)

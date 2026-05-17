@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -41,6 +43,7 @@ class LocationPickerMapWebView implements LocationPickerMapInterface {
     required VoidCallback onCameraIdle,
     required VoidCallback onCameraMoveStarted,
     required VoidCallback onMapReady,
+    Set<Factory<OneSequenceGestureRecognizer>>? gestureRecognizers,
   }) {
     // Só atualiza os "pending" initial enquanto o mapa ainda não foi inicializado.
     // Depois disso, qualquer mudança de câmera deve passar por animateCamera,
@@ -88,6 +91,7 @@ class LocationPickerMapWebView implements LocationPickerMapInterface {
             allowFileAccess: true,
             allowContentAccess: true,
           ),
+          gestureRecognizers: gestureRecognizers,
           onWebViewCreated: (c) {
             _bridge = LocationPickerMapBridge(c);
             _wireBridgeCallbacks();
