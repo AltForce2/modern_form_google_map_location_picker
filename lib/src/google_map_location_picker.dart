@@ -24,6 +24,7 @@ class LocationPicker extends StatefulWidget {
   LocationPicker(
     this.apiKey, {
     Key? key,
+    this.webMapsApiKey,
     this.initialCenter,
     this.initialZoom,
     this.requiredGPS,
@@ -46,6 +47,11 @@ class LocationPicker extends StatefulWidget {
   });
 
   final String apiKey;
+
+  /// Key específica para o Maps JavaScript API usado no WebView (desktop).
+  /// Necessária no Windows/macOS/Linux porque a `apiKey` mobile costuma ter só
+  /// Maps SDK Android/iOS habilitado, sem JS API. Se `null`, cai para `apiKey`.
+  final String? webMapsApiKey;
 
   final LatLng? initialCenter;
   final double? initialZoom;
@@ -375,13 +381,7 @@ class LocationPickerState extends State<LocationPicker> {
   /// Moves the camera to the provided location and updates other UI features to
   /// match the location.
   void moveToLocation(LatLng latLng) {
-    mapKey.currentState!.mapController.future.then((controller) {
-      controller.animateCamera(
-        CameraUpdate.newCameraPosition(
-          CameraPosition(target: latLng, zoom: 16),
-        ),
-      );
-    });
+    mapKey.currentState!.mapImpl.animateCamera(latLng, 16);
 
     reverseGeocodeLatLng(latLng);
 
@@ -420,6 +420,7 @@ class LocationPickerState extends State<LocationPicker> {
           ),
           body: MapPicker(
             widget.apiKey,
+            webMapsApiKey: widget.webMapsApiKey,
             initialCenter: widget.initialCenter,
             initialZoom: widget.initialZoom,
             requiredGPS: widget.requiredGPS,
@@ -459,6 +460,7 @@ class LocationPickerState extends State<LocationPicker> {
 Future<LocationResult?> showLocationPicker(
   BuildContext context,
   String apiKey, {
+  String? webMapsApiKey,
   LatLng initialCenter = const LatLng(45.521563, -122.677433),
   double initialZoom = 16,
   bool requiredGPS = false,
@@ -485,6 +487,7 @@ Future<LocationResult?> showLocationPicker(
         // print('[LocationPicker] [countries] ${countries.join(', ')}');
         return LocationPicker(
           apiKey,
+          webMapsApiKey: webMapsApiKey,
           initialCenter: initialCenter,
           initialZoom: initialZoom,
           requiredGPS: requiredGPS,

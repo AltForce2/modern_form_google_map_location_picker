@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google Maps</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        html,
+        body {
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+        }
+
+        #map {
+            height: 100%;
+            width: 100%;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="map"></div>
+
+    <script>
+        // Defina o receiver de comandos ANTES de carregar a Google Maps JS API
+        // para evitar race condition se o Flutter mandar algo cedo demais.
+        window.mapReady = false;
+        window.commandQueue = [];
+        let map = null;
+        let currentMapType = 'normal';
+
+        window.handleFlutterCommand = function (commandJson) {
+            try {
+                const command = JSON.parse(commandJson);
+                const { action, data } = command;
+
+                if (action === 'initialize') {
+                    initializeMap(data);
+                    return;
+                }
+
+                if (!window.mapReady) {
+                    window.commandQueue.push(commandJson);
+                    return;
+                }
+
+                switch (action) {
+                    case 'set_camera':
+                        setCameraPosition(data);
+                        break;
+                    case 'set_map_type':
+                        setMapType(data.type);
+                        break;
+                    default:
+                        console.warn('LocationPicker: comando desconhecido', action);
+                }
+            } catch (error) {
+                console.error('LocationPicker handleFlutterCommand error:', error);
+            }
+        };
+
+        function sendToFlutter(type, data) {
+            try {
+                const message = JSON.stringify({ type, data });
+                if (window.flutter_inappwebview) {
+                    window.flutter_inappwebview.callHandler('FlutterChannel', message);
+                }
+            } catch (error) {
+                console.error('LocationPicker sendToFlutter error:', error);
+            }
+        }
+
+        let debounceTimer;
+        function debounce(func, delay) {
+            return function () {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(() => func.apply(this, arguments), delay);
+            };
+        }
+
+        function mapTypeIdFor(name) {
+            switch (name) {
+                case 'satellite': return google.maps.MapTypeId.SATELLITE;
+                case 'terrain': return google.maps.MapTypeId.TERRAIN;
+                case 'hybrid': return google.maps.MapTypeId.HYBRID;
+                case 'normal':
+                default: return google.maps.MapTypeId.ROADMAP;
+            }
+        }
+
+        function initializeMap(config) {
+            if (typeof google === 'undefined' || !google.maps) {
+                // Google Maps ainda não carregou; tenta de novo logo
+                setTimeout(() => initializeMap(config), 100);
+                return;
+            }
+
+            const options = {
+                center: { lat: config.lat, lng: config.lng },
+                zoom: config.zoom,
+                mapTypeId: mapTypeIdFor(config.mapType || 'normal'),
+                disableDefaultUI: true,
+                zoomControl: true,
+                gestureHandling: 'greedy',
+                minZoom: 2,
+                maxZoom: 21,
+            };
+
+            if (config.mapStyleJson) {
+                try {
+                    options.styles = JSON.parse(config.mapStyleJson);
+                } catch (e) {
+                    console.warn('LocationPicker: mapStyleJson inválido', e);
+                }
+            }
+
+            map = new google.maps.Map(document.getElementById('map'), options);
+            currentMapType = config.mapType || 'normal';
+
+            map.addListener('center_changed', debounce(handleCameraMove, 80));
+            map.addListener('zoom_changed', debounce(handleCameraMove, 80));
+            map.addListener('idle', () => {
+                // Garante que o último camera_move (com lat/lng atual) chega ao
+                // Flutter ANTES do camera_idle. Sem isso, o panTo programático
+                // (busca por endereço) dispara idle antes do debounce do
+                // center_changed, e o card de endereço lê a posição antiga.
+                if (debounceTimer) {
+                    clearTimeout(debounceTimer);
+                    debounceTimer = null;
+                }
+                handleCameraMove();
+                sendToFlutter('camera_idle', {});
+            });
+            map.addListener('dragstart', () => sendToFlutter('camera_move_started', {}));
+
+            window.mapReady = true;
+            sendToFlutter('map_ready', {});
+
+            if (window.commandQueue.length > 0) {
+                const queue = window.commandQueue.splice(0);
+                queue.forEach(cmd => window.handleFlutterCommand(cmd));
+            }
+        }
+
+        function handleCameraMove() {
+            if (!map) return;
+            const center = map.getCenter();
+            sendToFlutter('camera_move', {
+                lat: center.lat(),
+                lng: center.lng(),
+                zoom: map.getZoom(),
+            });
+        }
+
+        function setCameraPosition(data) {
+            if (!map) return;
+            map.panTo({ lat: data.lat, lng: data.lng });
+            if (data.zoom !== undefined && data.zoom !== null) {
+                map.setZoom(data.zoom);
+            }
+        }
+
+        function setMapType(type) {
+            if (!map) return;
+            map.setMapTypeId(mapTypeIdFor(type));
+            currentMapType = type;
+        }
+
+        document.addEventListener('contextmenu', event => event.preventDefault());
+    </script>
+
+    <script src="https://maps.googleapis.com/maps/api/js?key={{API_KEY}}&libraries=maps"></script>
+</body>
+
+</html>

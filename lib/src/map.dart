@@ -14,12 +14,15 @@ import 'package:provider/provider.dart';
 
 import 'model/location_adress.dart';
 import 'model/location_result.dart';
+import 'platform/factory.dart';
+import 'platform/interface.dart';
 import 'utils/location_utils.dart';
 
 class MapPicker extends StatefulWidget {
   const MapPicker(
     this.apiKey, {
     Key? key,
+    this.webMapsApiKey,
     this.initialCenter,
     this.initialZoom,
     this.requiredGPS,
@@ -40,6 +43,11 @@ class MapPicker extends StatefulWidget {
   }) : super(key: key);
 
   final String apiKey;
+
+  /// Key específica para o Maps JavaScript API usado no WebView (desktop).
+  /// Necessária no Windows/macOS/Linux porque a `apiKey` mobile costuma ter só
+  /// Maps SDK Android/iOS habilitado, sem JS API. Se `null`, cai para `apiKey`.
+  final String? webMapsApiKey;
 
   final LatLng? initialCenter;
   final double? initialZoom;
@@ -69,7 +77,7 @@ class MapPicker extends StatefulWidget {
 }
 
 class MapPickerState extends State<MapPicker> {
-  Completer<GoogleMapController> mapController = Completer();
+  late final LocationPickerMapInterface mapImpl;
 
   MapType _currentMapType = MapType.normal;
 
@@ -89,6 +97,7 @@ class MapPickerState extends State<MapPicker> {
     final MapType nextType = MapType.values[(_currentMapType.index + 1) % MapType.values.length];
 
     setState(() => _currentMapType = nextType);
+    mapImpl.setMapType(nextType);
   }
 
   // this also checks for location permission.
@@ -113,15 +122,18 @@ class MapPickerState extends State<MapPicker> {
     if (currentPosition != null) moveToCurrentLocation(LatLng(currentPosition.latitude, currentPosition.longitude));
   }
 
-  Future moveToCurrentLocation(LatLng currentLocation) async {
+  Future<void> moveToCurrentLocation(LatLng currentLocation) async {
     d('MapPickerState.moveToCurrentLocation "currentLocation = [$currentLocation]"');
-    final controller = await mapController.future;
-    controller.animateCamera(CameraUpdate.newCameraPosition(CameraPosition(target: currentLocation, zoom: 16)));
+    await mapImpl.animateCamera(currentLocation, 16);
   }
 
   @override
   void initState() {
     super.initState();
+    mapImpl = LocationPickerMapFactory.create(
+      apiKey: widget.webMapsApiKey ?? widget.apiKey,
+    );
+
     if (widget.automaticallyAnimateToCurrentLocation! && !widget.requiredGPS!) _initCurrentLocation();
 
     if (widget.mapStylePath != null) {
@@ -129,6 +141,12 @@ class MapPickerState extends State<MapPicker> {
         _mapStyle = string;
       });
     }
+  }
+
+  @override
+  void dispose() {
+    mapImpl.dispose();
+    super.dispose();
   }
 
   @override
@@ -160,31 +178,24 @@ class MapPickerState extends State<MapPicker> {
     return Center(
       child: Stack(
         children: <Widget>[
-          GoogleMap(
-            myLocationButtonEnabled: false,
-            initialCameraPosition: CameraPosition(target: widget.initialCenter!, zoom: widget.initialZoom!),
-            style: _mapStyle,
-            onMapCreated: (GoogleMapController controller) {
-              mapController.complete(controller);
-
-              _lastMapPosition = widget.initialCenter;
-              LocationProvider.of(context, listen: false).setLastIdleLocation(_lastMapPosition);
-            },
-            onCameraMove: (CameraPosition position) {
-              _lastMapPosition = position.target;
-            },
-            onCameraIdle: () async {
+          mapImpl.buildWidget(
+            initialCenter: widget.initialCenter!,
+            initialZoom: widget.initialZoom!,
+            mapType: _currentMapType,
+            mapStyleJson: _mapStyle,
+            myLocationEnabled: true,
+            onCameraMove: (target) => _lastMapPosition = target,
+            onCameraIdle: () {
               debugPrint("onCameraIdle#_lastMapPosition = $_lastMapPosition");
               LocationProvider.of(context, listen: false).setLastIdleLocation(_lastMapPosition);
             },
             onCameraMoveStarted: () {
               debugPrint("onCameraMoveStarted#_lastMapPosition = $_lastMapPosition");
             },
-            //            onTap: (latLng) {
-            //              clearOverlay();
-            //            },
-            mapType: _currentMapType,
-            myLocationEnabled: true,
+            onMapReady: () {
+              _lastMapPosition = widget.initialCenter;
+              LocationProvider.of(context, listen: false).setLastIdleLocation(_lastMapPosition);
+            },
           ),
           _MapFabs(
             myLocationButtonEnabled: widget.myLocationButtonEnabled,
