@@ -109,7 +109,15 @@ class MapPickerState extends State<MapPicker> {
   }
 
   // this also checks for location permission.
-  Future<void> _initCurrentLocation() async {
+  //
+  // [forceAnimate] = true → sempre anima a câmera para a posição atual
+  // (chamado pelo FAB "minha localização" e pelo path original com
+  // automaticallyAnimateToCurrentLocation=true). Quando false (default),
+  // respeita widget.automaticallyAnimateToCurrentLocation — evita resetar
+  // o mapa para o GPS atual quando ele já está numa posição escolhida pelo
+  // usuário (importante no modo embedded, onde initialCenter aponta para
+  // a posição persistida do endereço).
+  Future<void> _initCurrentLocation({bool forceAnimate = false}) async {
     Position? currentPosition;
     try {
       currentPosition = await Geolocator.getCurrentPosition(
@@ -127,7 +135,11 @@ class MapPickerState extends State<MapPicker> {
 
     setState(() => _currentPosition = currentPosition);
 
-    if (currentPosition != null) moveToCurrentLocation(LatLng(currentPosition.latitude, currentPosition.longitude));
+    final bool shouldAnimate =
+        forceAnimate || widget.automaticallyAnimateToCurrentLocation == true;
+    if (currentPosition != null && shouldAnimate) {
+      moveToCurrentLocation(LatLng(currentPosition.latitude, currentPosition.longitude));
+    }
   }
 
   Future<void> moveToCurrentLocation(LatLng currentLocation) async {
@@ -170,7 +182,16 @@ class MapPickerState extends State<MapPicker> {
 
     final Widget body = Builder(
       builder: (context) {
-        if (_currentPosition == null && widget.automaticallyAnimateToCurrentLocation! && widget.requiredGPS!) {
+        // No modo embedded nunca bloqueamos no spinner aguardando o GPS:
+        // mostramos o mapa imediatamente no initialCenter e animamos para a
+        // posição atual em background quando ela chegar (via _initCurrentLocation
+        // → moveToCurrentLocation, controlado por automaticallyAnimateToCurrentLocation).
+        // Em desktop/Windows o GPS pode demorar vários segundos e bloquear era
+        // uma UX ruim — o pin sobre o mapa estático já é feedback suficiente.
+        if (!_isEmbedded &&
+            _currentPosition == null &&
+            widget.automaticallyAnimateToCurrentLocation! &&
+            widget.requiredGPS!) {
           return const Center(child: CircularProgressIndicator());
         }
 
@@ -231,7 +252,7 @@ class MapPickerState extends State<MapPicker> {
             myLocationButtonEnabled: widget.myLocationButtonEnabled,
             layersButtonEnabled: widget.layersButtonEnabled,
             onToggleMapTypePressed: _onToggleMapTypePressed,
-            onMyLocationPressed: _initCurrentLocation,
+            onMyLocationPressed: () => _initCurrentLocation(forceAnimate: true),
             embedded: _isEmbedded,
           ),
           pin(),
@@ -336,9 +357,16 @@ class MapPickerState extends State<MapPicker> {
   }
 
   Future<Map<String, String?>?> getAddress(LatLng? location) async {
+    // Sem coordenadas (mapa ainda não emitiu onCameraIdle / onMapReady) não
+    // faz sentido chamar a API — evita request inválida (latlng=null,null) e
+    // o RangeError de acessar results[0] num response com results: [].
+    if (location == null) {
+      return {"placeId": null, "address": null};
+    }
+
     try {
       final endpoint =
-          'https://maps.googleapis.com/maps/api/geocode/json?latlng=${location?.latitude},${location?.longitude}'
+          'https://maps.googleapis.com/maps/api/geocode/json?latlng=${location.latitude},${location.longitude}'
           '&key=${widget.apiKey}&language=${widget.language}';
 
       final response = jsonDecode(
@@ -346,9 +374,19 @@ class MapPickerState extends State<MapPicker> {
       );
 
       debugPrint("BLB data: $response ==> $endpoint");
-      _locationAdress = LocationAdress.fromMap(response['results'][0]);
 
-      return {"placeId": response['results'][0]['place_id'], "address": response['results'][0]['formatted_address']};
+      final List<dynamic>? results = response['results'] as List<dynamic>?;
+      if (results == null || results.isEmpty) {
+        return {"placeId": null, "address": null};
+      }
+
+      final Map<String, dynamic> first = results[0] as Map<String, dynamic>;
+      _locationAdress = LocationAdress.fromMap(first);
+
+      return {
+        "placeId": first['place_id'] as String?,
+        "address": first['formatted_address'] as String?,
+      };
     } catch (e) {
       debugPrint("BLB $e");
     }

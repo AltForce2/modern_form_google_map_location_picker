@@ -1,6 +1,10 @@
 ## 9.1.0
 
 * Adicionada flag `embedded` em `LocationPicker`/`MapPicker` para renderizar o picker inline (sem `Scaffold`/`AppBar`, com bordas arredondadas, `SearchInput` como overlay, card de resultado compacto, FABs reposicionados e absorção de `PointerScrollEvent` para não rolar o `Scrollable` pai no desktop/web).
+* Adicionado parâmetro `gestureRecognizers` em `LocationPickerMapInterface.buildWidget` (propagado para `GoogleMap` e `InAppWebView`). Em modo embedded, o `MapPicker` injeta um `EagerGestureRecognizer` + `ScaleGestureRecognizer`/`PanGestureRecognizer` (limitados a `PointerDeviceKind.trackpad`) para impedir que `Scrollable` pais roubem gestos de pinch/two-finger scroll do touchpad.
+* `_initCurrentLocation` agora respeita `automaticallyAnimateToCurrentLocation`: só anima a câmera para a posição do GPS automaticamente quando essa flag é `true`. O FAB "minha localização" continua sempre animando (via novo parâmetro interno `forceAnimate`). Corrige o bug em que o mapa "saltava" para a localização atual depois que o usuário selecionava um endereço em modo embedded.
+* Em modo embedded, o `MapPicker` não bloqueia mais no `CircularProgressIndicator` enquanto aguarda o GPS — o mapa aparece imediatamente no `initialCenter` e a animação para a posição atual acontece em background quando o GPS responde (importante no desktop/Windows onde o GPS pode demorar vários segundos).
+* `MapPicker.getAddress` agora retorna early quando `location == null` e trata respostas com `results: []` sem estourar `RangeError` — corrige o crash com `latlng=null,null` quando o card de localização renderiza antes do mapa emitir `onMapReady`/`onCameraIdle`.
 
 ## 4.1.7
 
