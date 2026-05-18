@@ -17,6 +17,7 @@ import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 
 import 'model/auto_comp_iete_item.dart';
+import 'model/location_adress.dart';
 import 'model/location_result.dart';
 import 'model/nearby_place.dart';
 import 'utils/location_utils.dart';
@@ -46,6 +47,7 @@ class LocationPicker extends StatefulWidget {
     this.desiredAccuracy,
     this.searchInputEnabled,
     this.embedded,
+    this.onAutoConfirm,
   });
 
   final String apiKey;
@@ -85,6 +87,12 @@ class LocationPicker extends StatefulWidget {
   /// do mouse (evita que o scroll role um `Scrollable` pai no desktop/web).
   /// O `SearchInput` é movido para o topo do mapa como overlay.
   final bool? embedded;
+
+  /// Disparado em modo `embedded` quando o usuário escolhe uma sugestão da
+  /// busca de autocomplete — antes da animação do mapa terminar. Permite que
+  /// o consumidor aplique imediatamente o endereço selecionado sem exigir um
+  /// segundo clique no botão de confirmação.
+  final ValueChanged<LocationResult>? onAutoConfirm;
 
   @override
   LocationPickerState createState() => LocationPickerState();
@@ -254,16 +262,53 @@ class LocationPickerState extends State<LocationPicker> {
         .then((headers) => http.get(Uri.parse(endpoint), headers: headers))
         .then((response) {
       if (response.statusCode == 200) {
-        Map<String, dynamic> location =
-            jsonDecode(response.body)['result']['geometry']['location'];
+        final Map<String, dynamic> result =
+            jsonDecode(response.body)['result'] as Map<String, dynamic>;
+        final Map<String, dynamic> location =
+            result['geometry']['location'] as Map<String, dynamic>;
 
         LatLng latLng = LatLng(location['lat'], location['lng']);
 
         moveToLocation(latLng);
+
+        if (widget.onAutoConfirm != null) {
+          _resolveAutoConfirmResult(
+            latLng: latLng,
+            detailsResult: result,
+          ).then((LocationResult res) {
+            if (!mounted) return;
+            widget.onAutoConfirm!(res);
+          });
+        }
       }
     }).catchError((error) {
       debugPrint(error);
     });
+  }
+
+  /// Monta o `LocationResult` usado pelo callback `onAutoConfirm`. Faz reverse
+  /// geocoding em `latLng` para obter `address_components` confiáveis (rua,
+  /// número, bairro, CEP) — o Places Details, dependendo do tipo do place
+  /// (cidade, estabelecimento), não retorna esses campos. Em caso de falha
+  /// do geocode, cai para o que vier do próprio Places Details.
+  Future<LocationResult> _resolveAutoConfirmResult({
+    required LatLng latLng,
+    required Map<String, dynamic> detailsResult,
+  }) async {
+    final LocationResult? geocoded = await LocationPickerUtils.reverseGeocode(
+      apiKey: widget.apiKey,
+      latLng: latLng,
+      language: widget.language ?? 'en',
+    );
+
+    if (geocoded != null) return geocoded;
+
+    return LocationResult(
+      latLng: latLng,
+      address: detailsResult['formatted_address'] as String?,
+      placeId: detailsResult['place_id'] as String?,
+      locationAdress: LocationAdress.fromMap(detailsResult),
+    );
   }
 
   /// Display autocomplete suggestions with the overlay.
