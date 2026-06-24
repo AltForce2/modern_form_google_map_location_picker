@@ -126,22 +126,11 @@ class LocationPickerState extends State<LocationPicker> {
     }
   }
 
-  /// Begins the search process by displaying a "wait" overlay then
-  /// proceeds to fetch the autocomplete list. The bottom "dialog"
-  /// is hidden so as to give more room and better experience for the
-  /// autocomplete list overlay.
-  void searchPlace(String place) {
-    // if (context == null) return;
-
-    clearOverlay();
-
-    setState(() => hasSearchTerm = place.length > 0);
-
-    if (place.length < 1) return;
-
+  /// Exibe o overlay "Finding place..." com spinner enquanto uma operação
+  /// assíncrona (autocomplete, resolução de URL) está em andamento.
+  void _showFindingPlaceOverlay() {
     final RenderBox renderBox = context.findRenderObject() as RenderBox;
-    Size size = renderBox.size;
-
+    final Size size = renderBox.size;
     final RenderBox? appBarBox =
         appBarKey.currentContext!.findRenderObject() as RenderBox?;
 
@@ -175,7 +164,62 @@ class LocationPickerState extends State<LocationPicker> {
     );
 
     Overlay.of(context).insert(overlayEntry!);
+  }
 
+  /// Move o mapa para [latLng], faz reverse geocode completo e chama
+  /// [widget.onAutoConfirm] quando disponível. Reutilizado tanto pelo
+  /// autocomplete de places quanto pelos novos resolvedores de
+  /// coordenadas e URL do Google Maps.
+  Future<void> selectResolvedLatLng(LatLng latLng) async {
+    clearOverlay();
+    moveToLocation(latLng);
+    if (widget.onAutoConfirm == null) return;
+
+    final LocationResult? result = await LocationPickerUtils.reverseGeocode(
+      apiKey: widget.apiKey,
+      latLng: latLng,
+      language: widget.language ?? 'en',
+    );
+    if (!mounted) return;
+    if (result != null) widget.onAutoConfirm!(result);
+  }
+
+  /// Begins the search process by displaying a "wait" overlay then
+  /// proceeds to fetch the autocomplete list. The bottom "dialog"
+  /// is hidden so as to give more room and better experience for the
+  /// autocomplete list overlay.
+  void searchPlace(String place) {
+    clearOverlay();
+
+    setState(() => hasSearchTerm = place.length > 0);
+
+    if (place.length < 1) return;
+
+    // Intercept 1: coordenadas lat/lng coladas — resolução imediata sem overlay.
+    final LatLng? coordsLatLng = LocationPickerUtils.parseLatLng(place);
+    if (coordsLatLng != null) {
+      selectResolvedLatLng(coordsLatLng);
+      return;
+    }
+
+    // Intercept 2: URL do Google Maps — seguir redirect e extrair coords.
+    if (LocationPickerUtils.isGoogleMapsUrl(place)) {
+      _showFindingPlaceOverlay();
+      LocationPickerUtils.resolveGoogleMapsUrl(place).then((LatLng? latLng) {
+        if (!mounted) return;
+        if (latLng != null) {
+          selectResolvedLatLng(latLng);
+        } else {
+          autoCompleteSearch(place);
+        }
+      }).catchError((_) {
+        if (mounted) autoCompleteSearch(place);
+      });
+      return;
+    }
+
+    // Fluxo padrão: Places Autocomplete.
+    _showFindingPlaceOverlay();
     autoCompleteSearch(place);
   }
 
