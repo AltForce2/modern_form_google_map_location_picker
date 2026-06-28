@@ -1,3 +1,12 @@
+## 9.5.0
+
+* Campo de busca do `LocationPicker` agora reconhece coordenadas lat/lng coladas (ex.: `-23.5505, -46.6333`) e as resolve diretamente no mapa com reverse geocode completo, sem passar pelo Places Autocomplete.
+* Adicionado suporte a colar links do Google Maps (`maps.app.goo.gl`, `goo.gl/maps`, `maps.google.*`, `google.com/maps`): o picker extrai as coords dos padrões `@lat,lng`, `?q=lat,lng`, `ll=lat,lng` e `!3dlat!4dlng`; para links curtos segue o redirect HTTP e inspeciona o header `Location` (funcional em Android/iOS/desktop; no Flutter Web a resolução de link curto é pulada por restrições de CORS, caindo para o autocomplete).
+* Adicionado `LocationPickerUtils.parseLatLng(String)` — parser de coordenadas ancorado no texto completo (evita disparar em digitação parcial de endereços) com suporte a notação européia de vírgula decimal.
+* Adicionado `LocationPickerUtils.isGoogleMapsUrl(String)` e `LocationPickerUtils.resolveGoogleMapsUrl(String)` — helper público e resolvedor assíncrono de URL do Google Maps.
+* Método `selectResolvedLatLng(LatLng)` extraído em `LocationPickerState`: centraliza mover câmera + reverse geocode + chamar `onAutoConfirm` (reutilizado pelo fluxo de places e pelos novos resolvedores).
+* Overlay "Finding place..." extraído para `_showFindingPlaceOverlay()`, eliminando duplicação de código.
+
 ## 9.1.0
 
 * Adicionada flag `embedded` em `LocationPicker`/`MapPicker` para renderizar o picker inline (sem `Scaffold`/`AppBar`, com bordas arredondadas, `SearchInput` como overlay, card de resultado compacto, FABs reposicionados e absorção de `PointerScrollEvent` para não rolar o `Scrollable` pai no desktop/web).

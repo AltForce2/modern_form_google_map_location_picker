@@ -96,6 +96,123 @@ class LocationPickerUtils {
     }
   }
 
+  /// Tenta interpretar [input] como um par "lat, lng" (notação inglesa ou
+  /// europeia com vírgula decimal). O regex é ancorado em ambas as extremidades
+  /// para não disparar durante a digitação parcial de um endereço.
+  /// Retorna null se o texto não casar exatamente ou as faixas forem inválidas.
+  static LatLng? parseLatLng(String input) {
+    final trimmed = input.trim();
+    // Aceita sinal opcional, dígitos, decimal opcional (ponto ou vírgula),
+    // separador vírgula com espaços opcionais, e o mesmo para lng.
+    final re = RegExp(r'^(-?\d+(?:[.,]\d+)?)\s*,\s*(-?\d+(?:[.,]\d+)?)$');
+    final match = re.firstMatch(trimmed);
+    if (match == null) return null;
+
+    final lat = double.tryParse(match.group(1)!.replaceAll(',', '.'));
+    final lng = double.tryParse(match.group(2)!.replaceAll(',', '.'));
+    if (!_validCoords(lat, lng)) return null;
+
+    return LatLng(lat!, lng!);
+  }
+
+  /// Retorna `true` se [input] parece ser uma URL do Google Maps.
+  static bool isGoogleMapsUrl(String input) {
+    final lower = input.toLowerCase().trim();
+    return lower.contains('maps.app.goo.gl') ||
+        lower.contains('goo.gl/maps') ||
+        lower.contains('maps.google.') ||
+        lower.contains('google.com/maps');
+  }
+
+  /// Extrai [LatLng] a partir de padrões conhecidos em URLs completas do Google Maps.
+  static LatLng? _extractCoordsFromUrl(String url) {
+    // @lat,lng[,zoom]
+    var m = RegExp(r'@(-?\d+\.?\d*),(-?\d+\.?\d*)').firstMatch(url);
+    if (m != null) {
+      final lat = double.tryParse(m.group(1)!);
+      final lng = double.tryParse(m.group(2)!);
+      if (_validCoords(lat, lng)) return LatLng(lat!, lng!);
+    }
+
+    // ?q=lat,lng  ou  &query=lat,lng
+    m = RegExp(r'[?&](?:q|query)=(-?\d+\.?\d*),(-?\d+\.?\d*)')
+        .firstMatch(url);
+    if (m != null) {
+      final lat = double.tryParse(m.group(1)!);
+      final lng = double.tryParse(m.group(2)!);
+      if (_validCoords(lat, lng)) return LatLng(lat!, lng!);
+    }
+
+    // ll=lat,lng
+    m = RegExp(r'[?&]ll=(-?\d+\.?\d*),(-?\d+\.?\d*)').firstMatch(url);
+    if (m != null) {
+      final lat = double.tryParse(m.group(1)!);
+      final lng = double.tryParse(m.group(2)!);
+      if (_validCoords(lat, lng)) return LatLng(lat!, lng!);
+    }
+
+    // !3dlat!4dlng  (parâmetro data= em URLs de embed/share)
+    m = RegExp(r'!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)').firstMatch(url);
+    if (m != null) {
+      final lat = double.tryParse(m.group(1)!);
+      final lng = double.tryParse(m.group(2)!);
+      if (_validCoords(lat, lng)) return LatLng(lat!, lng!);
+    }
+
+    return null;
+  }
+
+  static bool _validCoords(double? lat, double? lng) {
+    if (lat == null || lng == null) return false;
+    return lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+  }
+
+  /// Resolve uma URL do Google Maps (incluindo links curtos como maps.app.goo.gl)
+  /// para um [LatLng]. Segue redirects manualmente para poder ler o header
+  /// `Location` a cada salto. No Flutter Web retorna null (CORS bloqueia
+  /// a leitura do header fora do mesmo domínio).
+  static Future<LatLng?> resolveGoogleMapsUrl(String input) async {
+    final trimmed = input.trim();
+    if (!isGoogleMapsUrl(trimmed)) return null;
+
+    // Tenta extrair coords diretamente da URL de entrada (links longos)
+    final direct = _extractCoordsFromUrl(trimmed);
+    if (direct != null) return direct;
+
+    // Links curtos exigem seguir o redirect; no web CORS bloqueia o header Location
+    if (kIsWeb) return null;
+
+    try {
+      final client = http.Client();
+      try {
+        String currentUrl = trimmed;
+        for (int i = 0; i < 3; i++) {
+          final request = http.Request('GET', Uri.parse(currentUrl))
+            ..followRedirects = false
+            ..headers['User-Agent'] = 'Mozilla/5.0';
+          final streamed = await client
+              .send(request)
+              .timeout(const Duration(seconds: 5));
+          await streamed.stream.drain<void>();
+
+          final location = streamed.headers['location'];
+          if (location == null || location.isEmpty) break;
+
+          final coords = _extractCoordsFromUrl(location);
+          if (coords != null) return coords;
+
+          currentUrl = location;
+        }
+      } finally {
+        client.close();
+      }
+    } catch (e) {
+      debugPrint('resolveGoogleMapsUrl failed: $e');
+    }
+
+    return null;
+  }
+
   /// Forward geocoding headless: dado um `address` em texto livre, consulta o
   /// Geocoding API e devolve um `LocationResult` com `latLng`, `address`,
   /// `placeId` e `locationAdress` preenchidos a partir do primeiro
