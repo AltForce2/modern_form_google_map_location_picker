@@ -27,6 +27,12 @@ class LocationPickerUtils {
   static String geocodeUrl =
       "https://maps.googleapis.com/maps/api/geocode/json";
 
+  /// Prefixo de um proxy de CORS (ex.: `https://proxy.altfor.com.br/`) injetado
+  /// pelo app via `InitHelper`. Default vazio = sem proxy. Usado no Flutter Web
+  /// para expandir links curtos do Google Maps, contornando o bloqueio de CORS
+  /// que impede ler o header `Location` do redirect direto no navegador.
+  static String corsProxy = '';
+
   static Future<Map<String, String>?> getAppHeaders() async {
     if (kIsWeb) {
       return _appHeaderCache;
@@ -124,36 +130,30 @@ class LocationPickerUtils {
         lower.contains('google.com/maps');
   }
 
+  /// Padrões de coordenadas reconhecidos em URLs completas do Google Maps.
+  /// Cada regex precisa expor `lat` no group(1) e `lng` no group(2). São
+  /// testados em ordem; o primeiro que casar com coords válidas vence.
+  /// Onde a vírgula pode trazer espaço URL-encoded (`+`, `%20` ou espaço
+  /// literal), usa-se `,(?:\+|%20|\s)*` no separador.
+  static final List<RegExp> _coordPatterns = [
+    // @lat,lng[,zoom]
+    RegExp(r'@(-?\d+\.?\d*),(-?\d+\.?\d*)'),
+    // ?q=lat,lng  ou  &query=lat,lng
+    RegExp(r'[?&](?:q|query)=(-?\d+\.?\d*),(?:\+|%20|\s)*(-?\d+\.?\d*)'),
+    // ll=lat,lng
+    RegExp(r'[?&]ll=(-?\d+\.?\d*),(-?\d+\.?\d*)'),
+    // /maps/search|place|dir/lat,lng  (coords soltas no path)
+    RegExp(r'/maps/(?:search|place|dir)/(-?\d+\.?\d*),(?:\+|%20|\s)*(-?\d+\.?\d*)'),
+    // !3dlat!4dlng  (parâmetro data= em URLs de embed/share)
+    RegExp(r'!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)'),
+  ];
+
   /// Extrai [LatLng] a partir de padrões conhecidos em URLs completas do Google Maps.
   static LatLng? _extractCoordsFromUrl(String url) {
-    // @lat,lng[,zoom]
-    var m = RegExp(r'@(-?\d+\.?\d*),(-?\d+\.?\d*)').firstMatch(url);
-    if (m != null) {
-      final lat = double.tryParse(m.group(1)!);
-      final lng = double.tryParse(m.group(2)!);
-      if (_validCoords(lat, lng)) return LatLng(lat!, lng!);
-    }
+    for (final re in _coordPatterns) {
+      final m = re.firstMatch(url);
+      if (m == null) continue;
 
-    // ?q=lat,lng  ou  &query=lat,lng
-    m = RegExp(r'[?&](?:q|query)=(-?\d+\.?\d*),(-?\d+\.?\d*)')
-        .firstMatch(url);
-    if (m != null) {
-      final lat = double.tryParse(m.group(1)!);
-      final lng = double.tryParse(m.group(2)!);
-      if (_validCoords(lat, lng)) return LatLng(lat!, lng!);
-    }
-
-    // ll=lat,lng
-    m = RegExp(r'[?&]ll=(-?\d+\.?\d*),(-?\d+\.?\d*)').firstMatch(url);
-    if (m != null) {
-      final lat = double.tryParse(m.group(1)!);
-      final lng = double.tryParse(m.group(2)!);
-      if (_validCoords(lat, lng)) return LatLng(lat!, lng!);
-    }
-
-    // !3dlat!4dlng  (parâmetro data= em URLs de embed/share)
-    m = RegExp(r'!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)').firstMatch(url);
-    if (m != null) {
       final lat = double.tryParse(m.group(1)!);
       final lng = double.tryParse(m.group(2)!);
       if (_validCoords(lat, lng)) return LatLng(lat!, lng!);
@@ -168,9 +168,15 @@ class LocationPickerUtils {
   }
 
   /// Resolve uma URL do Google Maps (incluindo links curtos como maps.app.goo.gl)
-  /// para um [LatLng]. Segue redirects manualmente para poder ler o header
-  /// `Location` a cada salto. No Flutter Web retorna null (CORS bloqueia
-  /// a leitura do header fora do mesmo domínio).
+  /// para um [LatLng].
+  ///
+  /// Nativo/desktop: segue os redirects manualmente para ler o header `Location`
+  /// a cada salto. Flutter Web: o navegador bloqueia a leitura do header
+  /// `Location` (CORS), então, quando [corsProxy] está configurado, faz a
+  /// requisição via proxy — que segue o redirect server-side e devolve a página
+  /// final do Maps com CORS liberado — e extrai as coords do corpo da resposta
+  /// (ou do header `X-Final-Url`, se o proxy o ecoar). Sem proxy no web, retorna
+  /// null (degradação para o autocomplete).
   static Future<LatLng?> resolveGoogleMapsUrl(String input) async {
     final trimmed = input.trim();
     if (!isGoogleMapsUrl(trimmed)) return null;
@@ -179,8 +185,13 @@ class LocationPickerUtils {
     final direct = _extractCoordsFromUrl(trimmed);
     if (direct != null) return direct;
 
-    // Links curtos exigem seguir o redirect; no web CORS bloqueia o header Location
-    if (kIsWeb) return null;
+    // No web não dá pra ler o header Location do redirect (CORS). Quando há um
+    // proxy configurado, ele expande o link curto server-side e devolve a página
+    // final do Maps; sem proxy, degrada para o autocomplete.
+    if (kIsWeb) {
+      if (corsProxy.isEmpty) return null;
+      return _resolveViaCorsProxy(trimmed);
+    }
 
     try {
       final client = http.Client();
@@ -211,6 +222,43 @@ class LocationPickerUtils {
     }
 
     return null;
+  }
+
+  /// Expande um link curto do Google Maps no Flutter Web usando [corsProxy].
+  /// O proxy segue o redirect server-side e devolve a página final do Maps com
+  /// CORS liberado.
+  ///
+  /// Em `package:http`, `response.request` é sempre a Request original (o
+  /// endpoint do proxy) — o pacote NÃO surfa a URL pós-redirect. Por isso a
+  /// extração da URL final depende de o proxy ecoá-la num header `X-Final-Url`;
+  /// quando ausente, caímos no parse do corpo da página expandida, que costuma
+  /// carregar os padrões `@lat,lng` e `!3d!4d`.
+  static Future<LatLng?> _resolveViaCorsProxy(String url) async {
+    try {
+      // Concatena a URL alvo crua após o prefixo do proxy — mesma convenção de
+      // `autoCompleteWebUrl`/`detailsWebUrl`, em que o proxy lê tudo após o
+      // prefixo (inclusive querystrings) como o endereço de destino.
+      final endpoint = '$corsProxy$url';
+      final response = await http
+          .get(Uri.parse(endpoint))
+          .timeout(const Duration(seconds: 10));
+
+      if (response.statusCode != 200) return null;
+
+      // 1) URL final pós-redirect, se o proxy a ecoar via header (mais confiável
+      // que varrer o corpo, sem o risco de pegar coords de viewport vs pin).
+      final finalUrl = response.headers['x-final-url'];
+      if (finalUrl != null && finalUrl.isNotEmpty) {
+        final fromUrl = _extractCoordsFromUrl(finalUrl);
+        if (fromUrl != null) return fromUrl;
+      }
+
+      // 2) Fallback: varre o corpo da página expandida.
+      return _extractCoordsFromUrl(response.body);
+    } catch (e) {
+      debugPrint('_resolveViaCorsProxy failed: $e');
+      return null;
+    }
   }
 
   /// Forward geocoding headless: dado um `address` em texto livre, consulta o
