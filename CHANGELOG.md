@@ -1,3 +1,8 @@
+## 9.5.1
+
+* Resolução de link curto do Google Maps (`maps.app.goo.gl`) agora funciona no **Flutter Web** quando um proxy de CORS está configurado. Adicionado `LocationPickerUtils.corsProxy` (default vazio = comportamento atual): o app injeta o prefixo via `InitHelper`, espelhando o que já é feito com `autoCompleteWebUrl`/`detailsWebUrl`.
+* Em `resolveGoogleMapsUrl`, o early-return de web foi substituído por um ramo via proxy: quando `corsProxy` está vazio mantém-se o `null` (degradação para autocomplete); com proxy, a requisição passa pelo proxy — que segue o redirect server-side e devolve a página final do Maps com CORS liberado — e as coords são extraídas do corpo da resposta (ou do header `X-Final-Url`, quando o proxy ecoa a URL pós-redirect). O caminho nativo (seguir o header `Location` manualmente) permanece inalterado.
+
 ## 9.5.0
 
 * Campo de busca do `LocationPicker` agora reconhece coordenadas lat/lng coladas (ex.: `-23.5505, -46.6333`) e as resolve diretamente no mapa com reverse geocode completo, sem passar pelo Places Autocomplete.
