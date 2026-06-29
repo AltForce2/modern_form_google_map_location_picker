@@ -130,36 +130,30 @@ class LocationPickerUtils {
         lower.contains('google.com/maps');
   }
 
+  /// Padrões de coordenadas reconhecidos em URLs completas do Google Maps.
+  /// Cada regex precisa expor `lat` no group(1) e `lng` no group(2). São
+  /// testados em ordem; o primeiro que casar com coords válidas vence.
+  /// Onde a vírgula pode trazer espaço URL-encoded (`+`, `%20` ou espaço
+  /// literal), usa-se `,(?:\+|%20|\s)*` no separador.
+  static final List<RegExp> _coordPatterns = [
+    // @lat,lng[,zoom]
+    RegExp(r'@(-?\d+\.?\d*),(-?\d+\.?\d*)'),
+    // ?q=lat,lng  ou  &query=lat,lng
+    RegExp(r'[?&](?:q|query)=(-?\d+\.?\d*),(?:\+|%20|\s)*(-?\d+\.?\d*)'),
+    // ll=lat,lng
+    RegExp(r'[?&]ll=(-?\d+\.?\d*),(-?\d+\.?\d*)'),
+    // /maps/search|place|dir/lat,lng  (coords soltas no path)
+    RegExp(r'/maps/(?:search|place|dir)/(-?\d+\.?\d*),(?:\+|%20|\s)*(-?\d+\.?\d*)'),
+    // !3dlat!4dlng  (parâmetro data= em URLs de embed/share)
+    RegExp(r'!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)'),
+  ];
+
   /// Extrai [LatLng] a partir de padrões conhecidos em URLs completas do Google Maps.
   static LatLng? _extractCoordsFromUrl(String url) {
-    // @lat,lng[,zoom]
-    var m = RegExp(r'@(-?\d+\.?\d*),(-?\d+\.?\d*)').firstMatch(url);
-    if (m != null) {
-      final lat = double.tryParse(m.group(1)!);
-      final lng = double.tryParse(m.group(2)!);
-      if (_validCoords(lat, lng)) return LatLng(lat!, lng!);
-    }
+    for (final re in _coordPatterns) {
+      final m = re.firstMatch(url);
+      if (m == null) continue;
 
-    // ?q=lat,lng  ou  &query=lat,lng
-    m = RegExp(r'[?&](?:q|query)=(-?\d+\.?\d*),(-?\d+\.?\d*)')
-        .firstMatch(url);
-    if (m != null) {
-      final lat = double.tryParse(m.group(1)!);
-      final lng = double.tryParse(m.group(2)!);
-      if (_validCoords(lat, lng)) return LatLng(lat!, lng!);
-    }
-
-    // ll=lat,lng
-    m = RegExp(r'[?&]ll=(-?\d+\.?\d*),(-?\d+\.?\d*)').firstMatch(url);
-    if (m != null) {
-      final lat = double.tryParse(m.group(1)!);
-      final lng = double.tryParse(m.group(2)!);
-      if (_validCoords(lat, lng)) return LatLng(lat!, lng!);
-    }
-
-    // !3dlat!4dlng  (parâmetro data= em URLs de embed/share)
-    m = RegExp(r'!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)').firstMatch(url);
-    if (m != null) {
       final lat = double.tryParse(m.group(1)!);
       final lng = double.tryParse(m.group(2)!);
       if (_validCoords(lat, lng)) return LatLng(lat!, lng!);

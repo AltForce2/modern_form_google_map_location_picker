@@ -1,3 +1,8 @@
+## 9.5.2
+
+* `_extractCoordsFromUrl` agora reconhece coordenadas no **path** de URLs do Google Maps (`/maps/search/lat,lng`, `/maps/place/lat,lng`, `/maps/dir/lat,lng`) — antes só cobria `@lat,lng`, `q=`/`query=`, `ll=` e `!3d!4d`, então um link como `https://www.google.com/maps/search/-24.737106,+-53.740050?...` caía no autocomplete e dava "Nenhum resultado encontrado".
+* Separador de coordenadas tolerante a espaço URL-encoded após a vírgula (`+`, `%20` ou espaço literal) nos padrões `q=`/`query=` e no novo padrão de path — cobre links de busca compartilhados que trazem `lat,+lng`. Afeta web e nativo (path direto, independe do `corsProxy`).
+
 ## 9.5.1
 
 * Resolução de link curto do Google Maps (`maps.app.goo.gl`) agora funciona no **Flutter Web** quando um proxy de CORS está configurado. Adicionado `LocationPickerUtils.corsProxy` (default vazio = comportamento atual): o app injeta o prefixo via `InitHelper`, espelhando o que já é feito com `autoCompleteWebUrl`/`detailsWebUrl`.
