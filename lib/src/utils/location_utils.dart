@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import '../api/google_location_picker_api.dart';
 import '../api/location_picker_api.dart';
 import '../model/location_result.dart';
 
@@ -33,6 +34,22 @@ class LocationPickerUtils {
 
   static String _addressKey(String address, String language) =>
       '${address.trim().toLowerCase()}|$language';
+
+  /// Prefixo de um proxy de CORS usado no Flutter Web para expandir links
+  /// curtos do Google Maps.
+  ///
+  /// Movido para [GoogleLocationPickerApi.corsProxy] — é detalhe da
+  /// implementação que fala com o Google, e deixa de fazer sentido quando o
+  /// pacote aponta para um backend próprio (que resolve o link server-side).
+  /// Este atalho continua funcionando para não quebrar quem já o configura.
+  @Deprecated('Use GoogleLocationPickerApi.corsProxy. '
+      'Este atalho será removido numa próxima major.')
+  static String get corsProxy => GoogleLocationPickerApi.corsProxy;
+
+  @Deprecated('Use GoogleLocationPickerApi.corsProxy. '
+      'Este atalho será removido numa próxima major.')
+  static set corsProxy(String value) =>
+      GoogleLocationPickerApi.corsProxy = value;
 
   /// Esvazia os caches de geocoding. Usado nos testes para evitar que um caso
   /// veja o resultado cacheado por outro.
@@ -152,37 +169,33 @@ class LocationPickerUtils {
         lower.contains('google.com/maps');
   }
 
+  /// Padrões de coordenadas reconhecidos em URLs completas do Google Maps.
+  /// Cada regex precisa expor `lat` no group(1) e `lng` no group(2). São
+  /// testados em ordem; o primeiro que casar com coords válidas vence.
+  /// Onde a vírgula pode trazer espaço URL-encoded (`+`, `%20` ou espaço
+  /// literal), usa-se `,(?:\+|%20|\s)*` no separador.
+  static final List<RegExp> _coordPatterns = [
+    // @lat,lng[,zoom]
+    RegExp(r'@(-?\d+\.?\d*),(-?\d+\.?\d*)'),
+    // ?q=lat,lng  ou  &query=lat,lng
+    RegExp(r'[?&](?:q|query)=(-?\d+\.?\d*),(?:\+|%20|\s)*(-?\d+\.?\d*)'),
+    // ll=lat,lng
+    RegExp(r'[?&]ll=(-?\d+\.?\d*),(-?\d+\.?\d*)'),
+    // /maps/search|place|dir/lat,lng  (coords soltas no path)
+    RegExp(
+        r'/maps/(?:search|place|dir)/(-?\d+\.?\d*),(?:\+|%20|\s)*(-?\d+\.?\d*)'),
+    // !3dlat!4dlng  (parâmetro data= em URLs de embed/share)
+    RegExp(r'!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)'),
+  ];
+
   /// Extrai [LatLng] a partir de padrões conhecidos em URLs completas do
   /// Google Maps. Função pura — usada pela implementação de
-  /// [LocationPickerApi] que segue redirects.
+  /// [LocationPickerApi] que expande links curtos.
   static LatLng? extractCoordsFromUrl(String url) {
-    // @lat,lng[,zoom]
-    var m = RegExp(r'@(-?\d+\.?\d*),(-?\d+\.?\d*)').firstMatch(url);
-    if (m != null) {
-      final lat = double.tryParse(m.group(1)!);
-      final lng = double.tryParse(m.group(2)!);
-      if (_validCoords(lat, lng)) return LatLng(lat!, lng!);
-    }
+    for (final re in _coordPatterns) {
+      final m = re.firstMatch(url);
+      if (m == null) continue;
 
-    // ?q=lat,lng  ou  &query=lat,lng
-    m = RegExp(r'[?&](?:q|query)=(-?\d+\.?\d*),(-?\d+\.?\d*)').firstMatch(url);
-    if (m != null) {
-      final lat = double.tryParse(m.group(1)!);
-      final lng = double.tryParse(m.group(2)!);
-      if (_validCoords(lat, lng)) return LatLng(lat!, lng!);
-    }
-
-    // ll=lat,lng
-    m = RegExp(r'[?&]ll=(-?\d+\.?\d*),(-?\d+\.?\d*)').firstMatch(url);
-    if (m != null) {
-      final lat = double.tryParse(m.group(1)!);
-      final lng = double.tryParse(m.group(2)!);
-      if (_validCoords(lat, lng)) return LatLng(lat!, lng!);
-    }
-
-    // !3dlat!4dlng  (parâmetro data= em URLs de embed/share)
-    m = RegExp(r'!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)').firstMatch(url);
-    if (m != null) {
       final lat = double.tryParse(m.group(1)!);
       final lng = double.tryParse(m.group(2)!);
       if (_validCoords(lat, lng)) return LatLng(lat!, lng!);

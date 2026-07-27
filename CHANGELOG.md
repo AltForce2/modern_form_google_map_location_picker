@@ -52,6 +52,22 @@
 * Testes: 45 casos cobrindo cache/single-flight de geocoding, `parseLatLng`, extração de coordenadas de URL, `LocationAddress` e o contrato do bridge. O teste que estava quebrado foi corrigido.
 * CI: `flutter analyze` + `flutter test` em todo push e PR; publicação só em tag `v*` (antes publicava em todo push com os testes desativados).
 
+> Inclui tudo de 9.5.1, 9.5.2 e 9.6.0. Com a rede centralizada em
+> `LocationPickerApi`, o `corsProxy` passou a viver em
+> `GoogleLocationPickerApi.corsProxy` — `LocationPickerUtils.corsProxy`
+> continua funcionando como atalho `@Deprecated`, então quem já o configura via
+> `InitHelper` não quebra.
+
+## 9.5.2
+
+* `_extractCoordsFromUrl` agora reconhece coordenadas no **path** de URLs do Google Maps (`/maps/search/lat,lng`, `/maps/place/lat,lng`, `/maps/dir/lat,lng`) — antes só cobria `@lat,lng`, `q=`/`query=`, `ll=` e `!3d!4d`, então um link como `https://www.google.com/maps/search/-24.737106,+-53.740050?...` caía no autocomplete e dava "Nenhum resultado encontrado".
+* Separador de coordenadas tolerante a espaço URL-encoded após a vírgula (`+`, `%20` ou espaço literal) nos padrões `q=`/`query=` e no novo padrão de path — cobre links de busca compartilhados que trazem `lat,+lng`. Afeta web e nativo (path direto, independe do `corsProxy`).
+
+## 9.5.1
+
+* Resolução de link curto do Google Maps (`maps.app.goo.gl`) agora funciona no **Flutter Web** quando um proxy de CORS está configurado. Adicionado `LocationPickerUtils.corsProxy` (default vazio = comportamento atual): o app injeta o prefixo via `InitHelper`, espelhando o que já é feito com `autoCompleteWebUrl`/`detailsWebUrl`.
+* Em `resolveGoogleMapsUrl`, o early-return de web foi substituído por um ramo via proxy: quando `corsProxy` está vazio mantém-se o `null` (degradação para autocomplete); com proxy, a requisição passa pelo proxy — que segue o redirect server-side e devolve a página final do Maps com CORS liberado — e as coords são extraídas do corpo da resposta (ou do header `X-Final-Url`, quando o proxy ecoa a URL pós-redirect). O caminho nativo (seguir o header `Location` manualmente) permanece inalterado.
+
 ## 9.5.0
 
 * Campo de busca do `LocationPicker` agora reconhece coordenadas lat/lng coladas (ex.: `-23.5505, -46.6333`) e as resolve diretamente no mapa com reverse geocode completo, sem passar pelo Places Autocomplete.

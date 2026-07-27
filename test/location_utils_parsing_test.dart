@@ -117,6 +117,45 @@ void main() {
       );
     });
 
+    test('coordenadas soltas no path (/maps/search|place|dir/lat,lng)', () {
+      // Regressão da 9.5.2: sem este padrão o link caía no autocomplete e
+      // dava "Nenhum resultado encontrado".
+      expectCoords(
+        'https://www.google.com/maps/search/-24.737106,-53.740050?entry=tts',
+        -24.737106,
+        -53.740050,
+      );
+      expectCoords(
+        'https://www.google.com/maps/place/10.5,20.25',
+        10.5,
+        20.25,
+      );
+      expectCoords(
+        'https://www.google.com/maps/dir/1.5,2.5',
+        1.5,
+        2.5,
+      );
+    });
+
+    test('tolera espaço URL-encoded após a vírgula', () {
+      // Links de busca compartilhados trazem `lat,+lng`.
+      expectCoords(
+        'https://www.google.com/maps/search/-24.737106,+-53.740050?entry=tts',
+        -24.737106,
+        -53.740050,
+      );
+      expectCoords(
+        'https://maps.google.com/?q=-23.5505,%20-46.6333',
+        -23.5505,
+        -46.6333,
+      );
+      expectCoords(
+        'https://maps.google.com/?q=-23.5505, -46.6333',
+        -23.5505,
+        -46.6333,
+      );
+    });
+
     test('devolve null sem padrão reconhecível', () {
       expect(
         LocationPickerUtils.extractCoordsFromUrl('https://maps.app.goo.gl/abc'),

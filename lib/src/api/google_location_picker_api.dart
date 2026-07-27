@@ -33,6 +33,16 @@ class GoogleLocationPickerApi extends LocationPickerApi {
   /// Teto por salto ao seguir redirect de link encurtado.
   static const Duration redirectTimeout = Duration(seconds: 5);
 
+  /// Teto da requisição via [corsProxy] (segue o redirect server-side e devolve
+  /// a página final, então é mais lenta que um salto isolado).
+  static const Duration corsProxyTimeout = Duration(seconds: 10);
+
+  /// Prefixo de um proxy de CORS (ex.: `https://proxy.altfor.com.br/`) injetado
+  /// pelo app. Default vazio = sem proxy. Usado no Flutter Web para expandir
+  /// links curtos do Google Maps, contornando o bloqueio de CORS que impede
+  /// ler o header `Location` do redirect direto no navegador.
+  static String corsProxy = '';
+
   static String geocodeUrl =
       'https://maps.googleapis.com/maps/api/geocode/json';
   static String autoCompleteUrl =
@@ -230,9 +240,13 @@ class GoogleLocationPickerApi extends LocationPickerApi {
     final LatLng? direct = LocationPickerUtils.extractCoordsFromUrl(trimmed);
     if (direct != null) return direct;
 
-    // Links curtos exigem seguir o redirect para ler o header `Location`, o
-    // que o CORS bloqueia no Flutter Web.
-    if (kIsWeb) return null;
+    // No web o navegador bloqueia a leitura do header `Location` do redirect
+    // (CORS). Com um proxy configurado ele expande o link server-side; sem
+    // proxy, degrada para o autocomplete.
+    if (kIsWeb) {
+      if (corsProxy.isEmpty) return null;
+      return _resolveViaCorsProxy(trimmed);
+    }
 
     try {
       final http.Client client = http.Client();
@@ -264,6 +278,44 @@ class GoogleLocationPickerApi extends LocationPickerApi {
     }
 
     return null;
+  }
+
+  /// Expande um link curto do Google Maps no Flutter Web usando [corsProxy].
+  /// O proxy segue o redirect server-side e devolve a página final do Maps com
+  /// CORS liberado.
+  ///
+  /// Em `package:http`, `response.request` é sempre a Request original (o
+  /// endpoint do proxy) — o pacote NÃO expõe a URL pós-redirect. Por isso a
+  /// extração da URL final depende de o proxy ecoá-la num header `X-Final-Url`;
+  /// quando ausente, caímos no parse do corpo da página expandida, que costuma
+  /// carregar os padrões `@lat,lng` e `!3d!4d`.
+  Future<LatLng?> _resolveViaCorsProxy(String url) async {
+    try {
+      // Concatena a URL alvo crua após o prefixo do proxy — a convenção é o
+      // proxy ler tudo após o prefixo (inclusive querystrings) como destino.
+      final Uri endpoint = Uri.parse('$corsProxy$url');
+      final http.Response response =
+          await httpClient.get(endpoint).timeout(corsProxyTimeout);
+
+      if (response.statusCode != 200) return null;
+
+      // 1) URL final pós-redirect, se o proxy a ecoar via header (mais
+      // confiável que varrer o corpo, sem o risco de pegar coords do viewport
+      // em vez do pin).
+      final String? finalUrl = response.headers['x-final-url'];
+      if (finalUrl != null && finalUrl.isNotEmpty) {
+        final LatLng? fromUrl = LocationPickerUtils.extractCoordsFromUrl(
+          finalUrl,
+        );
+        if (fromUrl != null) return fromUrl;
+      }
+
+      // 2) Fallback: varre o corpo da página expandida.
+      return LocationPickerUtils.extractCoordsFromUrl(response.body);
+    } catch (e) {
+      debugPrint('_resolveViaCorsProxy failed: $e');
+      return null;
+    }
   }
 
   // ---------------------------------------------------------------------------
