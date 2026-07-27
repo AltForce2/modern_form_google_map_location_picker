@@ -24,7 +24,4 @@ class LocationPickerMapFactory {
       return false;
     }
   }
-
-  static bool isUsingWebView() => _isDesktop();
-  static bool isUsingNative() => !_isDesktop();
 }

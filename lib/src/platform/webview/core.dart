@@ -1,12 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:google_map_location_picker/generated/l10n.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' show LatLng, MapType;
 
 import '../interface.dart';
 import 'bridge.dart';
+import 'protocol.dart';
 
 class LocationPickerMapWebView implements LocationPickerMapInterface {
   final String apiKey;
@@ -31,6 +36,14 @@ class LocationPickerMapWebView implements LocationPickerMapInterface {
   VoidCallback? _onCameraIdle;
   VoidCallback? _onCameraMoveStarted;
   VoidCallback? _onMapReady;
+
+  // O Maps JS API não tem equivalente ao `myLocationEnabled` do SDK nativo:
+  // lá o próprio mapa rastreia e desenha o ponto azul. Aqui assinamos o
+  // geolocator e empurramos a posição para o JS, para o comportamento ficar
+  // igual nas duas plataformas.
+  bool _myLocationEnabled = false;
+  StreamSubscription<Position>? _positionSubscription;
+  Position? _lastKnownPosition;
 
   @override
   Widget buildWidget({
@@ -59,6 +72,11 @@ class LocationPickerMapWebView implements LocationPickerMapInterface {
     _onCameraMoveStarted = onCameraMoveStarted;
     _onMapReady = onMapReady;
 
+    if (myLocationEnabled != _myLocationEnabled) {
+      _myLocationEnabled = myLocationEnabled;
+      _syncMyLocationTracking();
+    }
+
     _htmlFuture ??= _loadHtml();
 
     return FutureBuilder<String>(
@@ -72,7 +90,7 @@ class LocationPickerMapWebView implements LocationPickerMapInterface {
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Text(
-                'Erro ao carregar o mapa: ${snapshot.error}',
+                S.of(context)?.server_error ?? 'Unable to load the map',
                 textAlign: TextAlign.center,
               ),
             ),
@@ -96,7 +114,7 @@ class LocationPickerMapWebView implements LocationPickerMapInterface {
             _bridge = LocationPickerMapBridge(c);
             _wireBridgeCallbacks();
             c.addJavaScriptHandler(
-              handlerName: 'FlutterChannel',
+              handlerName: MapBridgeProtocol.channel,
               callback: (args) {
                 if (args.isNotEmpty) {
                   _bridge!.handleMessage(args[0].toString());
@@ -114,7 +132,7 @@ class LocationPickerMapWebView implements LocationPickerMapInterface {
               lat: center.latitude,
               lng: center.longitude,
               zoom: zoom,
-              mapType: _mapTypeToString(_currentMapType),
+              mapType: mapTypeToString(_currentMapType),
               mapStyleJson: _mapStyleJson,
             );
           },
@@ -135,8 +153,66 @@ class LocationPickerMapWebView implements LocationPickerMapInterface {
     b.onMapReady = () {
       _mapReady = true;
       _flushPendingAnimate();
+      // A posição pode ter chegado antes do mapa ficar pronto; nesse caso o
+      // push foi descartado e precisa ser refeito agora.
+      _pushMyLocation();
       _onMapReady?.call();
     };
+  }
+
+  /// Liga ou desliga o rastreamento conforme [_myLocationEnabled].
+  void _syncMyLocationTracking() {
+    if (_myLocationEnabled) {
+      _startMyLocationTracking();
+    } else {
+      _stopMyLocationTracking();
+    }
+  }
+
+  void _startMyLocationTracking() {
+    if (_positionSubscription != null) return;
+
+    // A permissão já é solicitada pelo `MapPicker` antes de chegar aqui; se
+    // ainda não houver, o stream emite erro e simplesmente não desenhamos nada.
+    _positionSubscription = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 5,
+      ),
+    ).listen(
+      (Position position) {
+        _lastKnownPosition = position;
+        _pushMyLocation();
+      },
+      onError: (Object error) {
+        debugPrint('LocationPicker myLocation stream error: $error');
+      },
+    );
+  }
+
+  void _stopMyLocationTracking() {
+    _positionSubscription?.cancel();
+    _positionSubscription = null;
+    _lastKnownPosition = null;
+    _pushMyLocation();
+  }
+
+  /// Envia a posição corrente ao JS. Sem posição (ou com o indicador
+  /// desligado) manda o comando sem coordenadas, o que remove o marcador.
+  void _pushMyLocation() {
+    if (!_mapReady) return;
+
+    final Position? position = _lastKnownPosition;
+    if (!_myLocationEnabled || position == null) {
+      _bridge?.setMyLocation();
+      return;
+    }
+
+    _bridge?.setMyLocation(
+      lat: position.latitude,
+      lng: position.longitude,
+      accuracy: position.accuracy,
+    );
   }
 
   void _flushPendingAnimate() {
@@ -185,11 +261,21 @@ class LocationPickerMapWebView implements LocationPickerMapInterface {
   Future<void> setMapType(MapType mapType) async {
     _currentMapType = mapType;
     if (!_mapReady) return;
-    await _bridge?.setMapType(_mapTypeToString(mapType));
+    await _bridge?.setMapType(mapTypeToString(mapType));
   }
 
   @override
   void dispose() {
+    // O handler JS registrado em onWebViewCreated segura uma closure com este
+    // adapter; sem removê-lo o controller e o bridge sobrevivem ao unmount.
+    _bridge?.webViewController
+        .removeJavaScriptHandler(handlerName: MapBridgeProtocol.channel);
+
+    _positionSubscription?.cancel();
+    _positionSubscription = null;
+    _lastKnownPosition = null;
+    _myLocationEnabled = false;
+
     _mapReady = false;
     _mapInitDispatched = false;
     _bridge = null;
@@ -198,17 +284,18 @@ class LocationPickerMapWebView implements LocationPickerMapInterface {
     _pendingAnimateZoom = null;
   }
 
-  String _mapTypeToString(MapType type) {
+  @visibleForTesting
+  static String mapTypeToString(MapType type) {
     switch (type) {
       case MapType.satellite:
-        return 'satellite';
+        return MapBridgeProtocol.mapTypeSatellite;
       case MapType.terrain:
-        return 'terrain';
+        return MapBridgeProtocol.mapTypeTerrain;
       case MapType.hybrid:
-        return 'hybrid';
+        return MapBridgeProtocol.mapTypeHybrid;
       case MapType.normal:
       case MapType.none:
-        return 'normal';
+        return MapBridgeProtocol.mapTypeNormal;
     }
   }
 }

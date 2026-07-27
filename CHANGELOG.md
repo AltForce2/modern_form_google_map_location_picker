@@ -1,3 +1,57 @@
+## 10.0.0
+
+### Redução de custo da Geocoding API
+
+* **`LocationPickerUtils.reverseGeocode` e `forwardGeocode` agora têm cache e single-flight.** O resultado é cacheado por coordenada arredondada a 5 casas (~1 m) + idioma; chamadas concorrentes do mesmo ponto compartilham uma única requisição. Resultados `null` não são cacheados, para não fixar falha temporária. Este era o problema documentado em `REDUCAO_CUSTO_GEOCODING.md`: o picker consultava a mesma coordenada 2–3 vezes, sem cache.
+* **Os três caminhos redundantes de reverse geocode foram unificados.** `reverseGeocodeLatLng` deixou de montar a própria requisição HTTP e passou a usar `LocationPickerUtils.reverseGeocode`; `selectResolvedLatLng` e `decodeAndSelectPlace` reaproveitam o resultado que `moveToLocation` já produziu em vez de consultar de novo.
+* **`getNearbyPlaces` removido.** Chamava a Places Nearby Search a cada movimento de mapa e escrevia em `nearbyPlaces`, que ninguém lia — o único consumidor era um método comentado desde 2020. O modelo `NearbyPlace` foi removido junto.
+* **O card de endereço não refaz mais o geocode a cada rebuild.** A future é memoizada por coordenada; antes qualquer rebuild (troca de tipo de mapa, chegada do GPS) criava uma nova e disparava outra requisição cobrada.
+* **O `sessiontoken` do Places passou a ser enviado no Details e renovado a cada seleção**, fechando a sessão de billing do Autocomplete — antes cada request era cobrado individualmente.
+
+### Breaking changes
+
+* `LocationAdress` → **`LocationAddress`** (grafia corrigida), arquivo `location_adress.dart` → `location_address.dart`, e `LocationResult.locationAdress` → `locationAddress`. Os campos passaram de `snake_case` para `camelCase` (`street_number` → `streetNumber`, etc.). **As chaves de `toMap()` continuam em `snake_case`** — são formato de fio e quebrariam dados já persistidos.
+* `MapPicker.getAddress` retorna `Future<LocationResult?>` em vez de `Future<Map<String, String?>?>`.
+* Parâmetros de `LocationPicker`/`MapPicker` que eram nulos com force-unwrap (`requiredGPS`, `initialCenter`, `initialZoom`, `language`, `desiredAccuracy`, `embedded`, …) agora são não-nulos com default. Usar `LocationPicker(apiKey)` diretamente estourava em `map.dart`.
+* `resultCardAlignment` e `resultCardPadding` aceitam `AlignmentGeometry`/`EdgeInsetsGeometry`; o cast interno para `Alignment`/`EdgeInsets` quebrava com as variantes direcionais.
+* `moveToLocation` e `reverseGeocodeLatLng` retornam `Future<LocationResult?>`.
+* Removidos: `LocationPickerMapFactory.isUsingWebView()/isUsingNative()`, `LocationPickerUtils.autoCompleteWebUrl`/`detailsWebUrl` (idênticos às versões não-web), `PlaceholderWidget`, `SearchInput.searchInputKey`.
+* `AutoCompleteItem` (arquivo `auto_comp_iete_item.dart`) removido, substituído por `PlaceSuggestion` da camada de API — eram o mesmo modelo. `RichSuggestion` passou a receber `PlaceSuggestion`.
+* `LocationPickerUtils.httpClient`, `geocodeUrl`, `autoCompleteUrl`, `detailsUrl` e `getAppHeaders()` movidos para `GoogleLocationPickerApi`, onde a rede de fato acontece.
+
+### Novidades
+
+* **Toda a rede passou para uma interface única e trocável: `LocationPickerApi`.** As cinco chamadas do pacote (reverse geocode, forward geocode, autocomplete, place details e resolução de link do Maps) passam por ela, e o `package:http` existe em um único arquivo — `GoogleLocationPickerApi`, a implementação padrão. Para deixar de bater direto no Google, implemente a interface e atribua `LocationPickerApi.instance = MinhaApi()` antes de abrir o picker; nenhum widget precisa mudar.
+  * Os modelos de retorno (`PlaceSuggestion`, `PlaceDetails`) são do pacote, não o JSON cru do Google — uma implementação alternativa não precisa imitar `matched_substrings` nem `geometry.location`.
+  * **Cache e single-flight ficam acima da interface**, em `LocationPickerUtils`, então valem para qualquer implementação sem que ela os reimplemente.
+  * `LocationPickerUtils` não faz mais requisição: sobrou o cache e o parsing puro (`parseLatLng`, `isGoogleMapsUrl`, `extractCoordsFromUrl`).
+
+* **`myLocationEnabled` passou a funcionar no desktop (WebView).** O Maps JS API não tem equivalente ao `myLocationEnabled` do SDK nativo, então o ponto azul simplesmente não existia no Windows/macOS/Linux. Agora o adapter WebView assina `Geolocator.getPositionStream` (filtro de 5 m) e desenha o marcador e o círculo de precisão via JS, com o mesmo rastreamento contínuo do nativo. A assinatura é cancelada no `dispose`.
+
+### Correções
+
+* **Parsing defensivo em todas as respostas do Google.** `results[0]`, `predictions`, `matched_substrings[0]` e `geometry.location` eram acessados sem guarda; o Google devolve HTTP 200 com `results: []` em `ZERO_RESULTS`/`REQUEST_DENIED`/`OVER_QUERY_LIMIT`. O `status` do corpo agora é checado e logado com `error_message`.
+* `LocationAddress.fromMap` tolera `address_components` ausente — o Places Details não retorna o campo para alguns tipos de place.
+* `RichSuggestion` recorta os offsets de `matched_substrings` contra o tamanho real do texto, em vez de estourar `RangeError` no `substring`.
+* **`MapPicker.build()` não tem mais efeitos colaterais.** Pedia permissão de localização, lia o GPS e chamava `Navigator.pop` a cada rebuild — e como a leitura do GPS chama `setState`, o rebuild se realimentava. Movido para `initState`.
+* `catchError((error) => debugPrint(error))` lançava `TypeError` dentro do próprio handler de erro (`debugPrint` espera `String?`).
+* O overlay "Finding place..." não fica mais preso quando a busca falha, e respostas obsoletas do autocomplete não sobrescrevem mais sugestões novas.
+* `getAppHeaders()` só chama `PackageInfo.fromPlatform()` em Android/iOS. Em desktop o resultado era descartado e a chamada podia lançar, derrubando a requisição inteira.
+* Vazamentos corrigidos: `StreamSubscription` do teclado e `Timer` de debounce no `SearchInput` não eram cancelados; o handler JS do WebView não era removido no `dispose`.
+* `MapType.none` saiu do ciclo do botão de camadas — renderizava tela em branco no nativo e era tratado como `normal` no WebView.
+* O estilo de mapa carregado de `mapStylePath` agora dispara `setState`; sem isso podia nunca ser aplicado.
+* `WillPopScope` (deprecado) → `PopScope`.
+
+### Interno
+
+* `flutter_lints` ativado (o `include` estava comentado, então nenhum lint rodava). `flutter analyze` limpo.
+* Camada de rede de Places extraída para `PlacesService`, fora do `State`. URLs montadas com `Uri` (o autocomplete enviava `input={texto}` com as chaves literais e não escapava acentos), `http.Client` injetável e timeout de 15 s em todas as chamadas.
+* Diálogos de permissão unificados em `_LocationPermissionDialog`; protocolo do bridge WebView extraído para `MapBridgeProtocol`.
+* Divergências remanescentes entre as implementações nativa e WebView documentadas em `LocationPickerMapInterface`: `onCameraMoveStarted` só dispara em `dragstart` no WebView, e o WebView emite um `onCameraIdle` extra logo após o primeiro render.
+* Dependências: `android_intent_plus` removido (sem uso), `plugin_platform_interface` declarado (era usado só transitivamente).
+* Testes: 45 casos cobrindo cache/single-flight de geocoding, `parseLatLng`, extração de coordenadas de URL, `LocationAddress` e o contrato do bridge. O teste que estava quebrado foi corrigido.
+* CI: `flutter analyze` + `flutter test` em todo push e PR; publicação só em tag `v*` (antes publicava em todo push com os testes desativados).
+
 ## 9.5.0
 
 * Campo de busca do `LocationPicker` agora reconhece coordenadas lat/lng coladas (ex.: `-23.5505, -46.6333`) e as resolve diretamente no mapa com reverse geocode completo, sem passar pelo Places Autocomplete.

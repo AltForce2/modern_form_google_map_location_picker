@@ -6,16 +6,14 @@ import 'package:google_map_location_picker/generated/l10n.dart';
 
 /// Custom Search input field, showing the search and clear icons.
 class SearchInput extends StatefulWidget {
-  SearchInput(
+  const SearchInput(
     this.onSearchInput, {
-    Key? key,
-    this.searchInputKey,
+    super.key,
     this.boxDecoration,
     this.hintText,
-  }) : super(key: key);
+  });
 
   final ValueChanged<String> onSearchInput;
-  final Key? searchInputKey;
   final BoxDecoration? boxDecoration;
   final String? hintText;
 
@@ -29,21 +27,27 @@ class SearchInputState extends State<SearchInput> {
 
   Timer? debouncer;
 
+  StreamSubscription<bool>? _keyboardVisibilitySubscription;
+
   bool hasSearchEntry = false;
 
   @override
   void initState() {
     super.initState();
     editController.addListener(onSearchInputChange);
-    KeyboardVisibilityController().onChange.listen((bool visible) {
-      if (!visible) {
-        focus.unfocus();
-      }
+    _keyboardVisibilitySubscription =
+        KeyboardVisibilityController().onChange.listen((bool visible) {
+      if (!visible) focus.unfocus();
     });
   }
 
   @override
   void dispose() {
+    // Sem cancelar, o timer dispara `onSearchInput` depois do unmount e a
+    // subscription mantém o State vivo (e chama `focus` já descartado).
+    debouncer?.cancel();
+    _keyboardVisibilitySubscription?.cancel();
+
     editController.removeListener(onSearchInputChange);
     editController.dispose();
     focus.dispose();

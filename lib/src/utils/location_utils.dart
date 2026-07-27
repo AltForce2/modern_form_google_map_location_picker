@@ -1,100 +1,128 @@
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:http/http.dart' as http;
-import 'package:package_info_plus/package_info_plus.dart';
 
-import '../model/location_adress.dart';
+import '../api/location_picker_api.dart';
 import '../model/location_result.dart';
 
+/// Helpers de localização do picker.
+///
+/// Não faz requisição: toda a rede vive em [LocationPickerApi]. O que sobra
+/// aqui é (a) parsing puro de coordenadas e URLs e (b) a camada de cache e
+/// deduplicação por cima do geocoding, que vale para qualquer implementação
+/// de [LocationPickerApi].
 class LocationPickerUtils {
-  static const _platform = const MethodChannel('google_map_location_picker');
-  static Map<String, String> _appHeaderCache = {};
+  /// Cache de reverse geocoding por coordenada arredondada (~1 metro).
+  /// Evita pagar de novo pelo mesmo ponto dentro da sessão.
+  static final Map<String, LocationResult> _reverseCache = {};
 
-  static String autoCompleteUrl =
-      "https://maps.googleapis.com/maps/api/place/autocomplete/json";
-  static String autoCompleteWebUrl =
-      "https://maps.googleapis.com/maps/api/place/autocomplete/json";
+  /// Chamadas de reverse geocoding em andamento, por chave de coordenada. Sem
+  /// isto, requisições concorrentes do mesmo ponto viram N chamadas COBRADAS
+  /// antes de a primeira preencher o cache — o picker dispara reverse geocode
+  /// por caminhos que rodam quase simultaneamente.
+  static final Map<String, Future<LocationResult?>> _reverseInFlight = {};
 
-  static String detailsUrl =
-      "https://maps.googleapis.com/maps/api/place/details/json";
-  static String detailsWebUrl =
-      "https://maps.googleapis.com/maps/api/place/details/json";
+  /// Cache e single-flight equivalentes para o forward geocoding.
+  static final Map<String, LocationResult> _forwardCache = {};
+  static final Map<String, Future<LocationResult?>> _forwardInFlight = {};
 
-  static String geocodeUrl =
-      "https://maps.googleapis.com/maps/api/geocode/json";
+  /// 5 casas decimais ≈ 1 metro. O `language` entra na chave porque a resposta
+  /// muda conforme o idioma.
+  static String _coordKey(LatLng latLng, String language) =>
+      '${latLng.latitude.toStringAsFixed(5)},'
+      '${latLng.longitude.toStringAsFixed(5)}|$language';
 
-  static Future<Map<String, String>?> getAppHeaders() async {
-    if (kIsWeb) {
-      return _appHeaderCache;
-    }
-    if (_appHeaderCache.isEmpty) {
-      PackageInfo packageInfo = await PackageInfo.fromPlatform();
+  static String _addressKey(String address, String language) =>
+      '${address.trim().toLowerCase()}|$language';
 
-      if (Platform.isIOS) {
-        _appHeaderCache = {
-          "X-Ios-Bundle-Identifier": packageInfo.packageName,
-        };
-      } else if (Platform.isAndroid) {
-        String sha1 = "";
-        try {
-          sha1 = await _platform.invokeMethod(
-              'getSigningCertSha1', packageInfo.packageName);
-        } on PlatformException {
-          _appHeaderCache = {};
-        }
-
-        _appHeaderCache = {
-          "X-Android-Package": packageInfo.packageName,
-          "X-Android-Cert": sha1,
-        };
-      }
-    }
-
-    return _appHeaderCache;
+  /// Esvazia os caches de geocoding. Usado nos testes para evitar que um caso
+  /// veja o resultado cacheado por outro.
+  @visibleForTesting
+  static void clearGeocodeCache() {
+    _reverseCache.clear();
+    _reverseInFlight.clear();
+    _forwardCache.clear();
+    _forwardInFlight.clear();
   }
 
-  /// Reverse geocoding headless: dado um `latLng`, consulta o Geocoding API
-  /// e devolve um `LocationResult` com `address`, `placeId` e `locationAdress`
-  /// preenchidos a partir do primeiro `results[0]`. Retorna `null` se a API
+  /// Reverse geocoding: dado um `latLng`, devolve um [LocationResult] com
+  /// `address`, `placeId` e `locationAddress`. Retorna `null` se a chamada
   /// falhar ou não houver resultados.
+  ///
+  /// O resultado é cacheado por coordenada (~1 m) + idioma, e chamadas
+  /// concorrentes do mesmo ponto compartilham uma única requisição. Delega a
+  /// rede para [LocationPickerApi.instance].
   static Future<LocationResult?> reverseGeocode({
     required String apiKey,
     required LatLng latLng,
     String language = 'en',
-  }) async {
-    try {
-      final endpoint =
-          '$geocodeUrl?latlng=${latLng.latitude},${latLng.longitude}'
-          '&key=$apiKey&language=$language';
-
-      final response = await http.get(
-        Uri.parse(endpoint),
-        headers: await getAppHeaders(),
-      );
-
-      if (response.statusCode != 200) return null;
-
-      final Map<String, dynamic> body =
-          jsonDecode(response.body) as Map<String, dynamic>;
-      final List<dynamic>? results = body['results'] as List<dynamic>?;
-      if (results == null || results.isEmpty) return null;
-
-      final Map<String, dynamic> first = results[0] as Map<String, dynamic>;
-      return LocationResult(
+  }) {
+    return _cached(
+      key: _coordKey(latLng, language),
+      cache: _reverseCache,
+      inFlight: _reverseInFlight,
+      fetch: () => LocationPickerApi.instance.reverseGeocode(
+        apiKey: apiKey,
         latLng: latLng,
-        address: first['formatted_address'] as String?,
-        placeId: first['place_id'] as String?,
-        locationAdress: LocationAdress.fromMap(first),
-      );
-    } catch (e) {
-      debugPrint("reverseGeocode failed: $e");
-      return null;
+        language: language,
+      ),
+    );
+  }
+
+  /// Forward geocoding: dado um `address` em texto livre, devolve um
+  /// [LocationResult] com `latLng` preenchido. Mesmo contrato de cache do
+  /// [reverseGeocode], chaveado pelo endereço normalizado.
+  static Future<LocationResult?> forwardGeocode({
+    required String apiKey,
+    required String address,
+    String language = 'en',
+  }) {
+    if (address.trim().isEmpty) return Future.value(null);
+
+    return _cached(
+      key: _addressKey(address, language),
+      cache: _forwardCache,
+      inFlight: _forwardInFlight,
+      fetch: () => LocationPickerApi.instance.forwardGeocode(
+        apiKey: apiKey,
+        address: address,
+        language: language,
+      ),
+    );
+  }
+
+  /// Cache + single-flight. O single-flight é o que importa para o custo: sem
+  /// ele, chamadas simultâneas do mesmo ponto saem todas antes de qualquer uma
+  /// preencher o cache.
+  static Future<LocationResult?> _cached({
+    required String key,
+    required Map<String, LocationResult> cache,
+    required Map<String, Future<LocationResult?>> inFlight,
+    required Future<LocationResult?> Function() fetch,
+  }) async {
+    final LocationResult? hit = cache[key];
+    if (hit != null) return hit;
+
+    final Future<LocationResult?>? pending = inFlight[key];
+    if (pending != null) return pending;
+
+    final Future<LocationResult?> future = fetch();
+    inFlight[key] = future;
+
+    try {
+      final LocationResult? result = await future;
+      // `null` (falha de rede, ZERO_RESULTS) não é cacheado de propósito, para
+      // não fixar uma falha temporária.
+      if (result != null) cache[key] = result;
+      return result;
+    } finally {
+      inFlight.remove(key);
     }
   }
+
+  /// Resolve uma URL do Google Maps (inclusive links curtos) para um [LatLng].
+  /// Delega para [LocationPickerApi.instance].
+  static Future<LatLng?> resolveGoogleMapsUrl(String input) =>
+      LocationPickerApi.instance.resolveMapsUrl(input);
 
   /// Tenta interpretar [input] como um par "lat, lng" (notação inglesa ou
   /// europeia com vírgula decimal). O regex é ancorado em ambas as extremidades
@@ -124,8 +152,10 @@ class LocationPickerUtils {
         lower.contains('google.com/maps');
   }
 
-  /// Extrai [LatLng] a partir de padrões conhecidos em URLs completas do Google Maps.
-  static LatLng? _extractCoordsFromUrl(String url) {
+  /// Extrai [LatLng] a partir de padrões conhecidos em URLs completas do
+  /// Google Maps. Função pura — usada pela implementação de
+  /// [LocationPickerApi] que segue redirects.
+  static LatLng? extractCoordsFromUrl(String url) {
     // @lat,lng[,zoom]
     var m = RegExp(r'@(-?\d+\.?\d*),(-?\d+\.?\d*)').firstMatch(url);
     if (m != null) {
@@ -135,8 +165,7 @@ class LocationPickerUtils {
     }
 
     // ?q=lat,lng  ou  &query=lat,lng
-    m = RegExp(r'[?&](?:q|query)=(-?\d+\.?\d*),(-?\d+\.?\d*)')
-        .firstMatch(url);
+    m = RegExp(r'[?&](?:q|query)=(-?\d+\.?\d*),(-?\d+\.?\d*)').firstMatch(url);
     if (m != null) {
       final lat = double.tryParse(m.group(1)!);
       final lng = double.tryParse(m.group(2)!);
@@ -165,107 +194,5 @@ class LocationPickerUtils {
   static bool _validCoords(double? lat, double? lng) {
     if (lat == null || lng == null) return false;
     return lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
-  }
-
-  /// Resolve uma URL do Google Maps (incluindo links curtos como maps.app.goo.gl)
-  /// para um [LatLng]. Segue redirects manualmente para poder ler o header
-  /// `Location` a cada salto. No Flutter Web retorna null (CORS bloqueia
-  /// a leitura do header fora do mesmo domínio).
-  static Future<LatLng?> resolveGoogleMapsUrl(String input) async {
-    final trimmed = input.trim();
-    if (!isGoogleMapsUrl(trimmed)) return null;
-
-    // Tenta extrair coords diretamente da URL de entrada (links longos)
-    final direct = _extractCoordsFromUrl(trimmed);
-    if (direct != null) return direct;
-
-    // Links curtos exigem seguir o redirect; no web CORS bloqueia o header Location
-    if (kIsWeb) return null;
-
-    try {
-      final client = http.Client();
-      try {
-        String currentUrl = trimmed;
-        for (int i = 0; i < 3; i++) {
-          final request = http.Request('GET', Uri.parse(currentUrl))
-            ..followRedirects = false
-            ..headers['User-Agent'] = 'Mozilla/5.0';
-          final streamed = await client
-              .send(request)
-              .timeout(const Duration(seconds: 5));
-          await streamed.stream.drain<void>();
-
-          final location = streamed.headers['location'];
-          if (location == null || location.isEmpty) break;
-
-          final coords = _extractCoordsFromUrl(location);
-          if (coords != null) return coords;
-
-          currentUrl = location;
-        }
-      } finally {
-        client.close();
-      }
-    } catch (e) {
-      debugPrint('resolveGoogleMapsUrl failed: $e');
-    }
-
-    return null;
-  }
-
-  /// Forward geocoding headless: dado um `address` em texto livre, consulta o
-  /// Geocoding API e devolve um `LocationResult` com `latLng`, `address`,
-  /// `placeId` e `locationAdress` preenchidos a partir do primeiro
-  /// `results[0]`. Retorna `null` se a API falhar ou não houver resultados.
-  static Future<LocationResult?> forwardGeocode({
-    required String apiKey,
-    required String address,
-    String language = 'en',
-  }) async {
-    if (address.trim().isEmpty) return null;
-
-    try {
-      final endpoint =
-          '$geocodeUrl?address=${Uri.encodeQueryComponent(address)}'
-          '&key=$apiKey&language=$language';
-
-      final response = await http.get(
-        Uri.parse(endpoint),
-        headers: await getAppHeaders(),
-      );
-
-      if (response.statusCode != 200) return null;
-
-      final Map<String, dynamic> body =
-          jsonDecode(response.body) as Map<String, dynamic>;
-      final List<dynamic>? results = body['results'] as List<dynamic>?;
-      if (results == null || results.isEmpty) return null;
-
-      final Map<String, dynamic> first = results[0] as Map<String, dynamic>;
-      final Map<String, dynamic>? geometry =
-          first['geometry'] as Map<String, dynamic>?;
-      final Map<String, dynamic>? location =
-          geometry?['location'] as Map<String, dynamic>?;
-
-      LatLng? latLng;
-      if (location != null &&
-          location['lat'] is num &&
-          location['lng'] is num) {
-        latLng = LatLng(
-          (location['lat'] as num).toDouble(),
-          (location['lng'] as num).toDouble(),
-        );
-      }
-
-      return LocationResult(
-        latLng: latLng,
-        address: first['formatted_address'] as String?,
-        placeId: first['place_id'] as String?,
-        locationAdress: LocationAdress.fromMap(first),
-      );
-    } catch (e) {
-      debugPrint("forwardGeocode failed: $e");
-      return null;
-    }
   }
 }

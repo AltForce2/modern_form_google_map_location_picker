@@ -167,6 +167,64 @@ countries: ['AE', 'NG'],
 );
 ```
 
+## Usando um backend próprio em vez do Google
+
+Toda a rede do pacote passa por uma interface só, `LocationPickerApi`. A
+implementação padrão (`GoogleLocationPickerApi`) fala direto com as APIs do
+Google; para roteirizar por um backend próprio — por exemplo, para compartilhar
+um cache de geocoding entre todos os usuários em vez de um cache por
+dispositivo — implemente a interface e instale a sua versão:
+
+```dart
+class MinhaApi extends LocationPickerApi {
+  @override
+  Future<LocationResult?> reverseGeocode({
+    required String apiKey,      // pode ignorar: seu backend guarda a chave
+    required LatLng latLng,
+    required String language,
+  }) async {
+    final res = await meuHttp.get('/geocode/reverse', query: {
+      'lat': latLng.latitude,
+      'lng': latLng.longitude,
+      'language': language,
+    });
+    if (res == null) return null;
+    return LocationResult(
+      latLng: latLng,
+      address: res['address'],
+      placeId: res['placeId'],
+      locationAddress: LocationAddress(route: res['route'], /* ... */),
+    );
+  }
+
+  // ... forwardGeocode, autocomplete, placeDetails, resolveMapsUrl
+}
+
+void main() {
+  LocationPickerApi.instance = MinhaApi();
+  runApp(const MyApp());
+}
+```
+
+Nenhum widget precisa mudar — `showLocationPicker` e `LocationPicker` continuam
+iguais.
+
+Pontos que valem saber:
+
+- **Cache e deduplicação ficam fora da interface.** `LocationPickerUtils`
+  aplica cache por coordenada (~1 m) + idioma e single-flight por cima de
+  qualquer implementação, então a sua não precisa reimplementá-los.
+- **Os modelos são do pacote, não do Google.** `PlaceSuggestion` e
+  `PlaceDetails` já vêm normalizados; você não precisa imitar
+  `matched_substrings` nem `geometry.location`.
+- **Devolva `null` (ou lista vazia) em falha**, não exceção — o picker trata
+  ausência de resultado como estado normal.
+- **`resolveMapsUrl` é o caso mais interessante de sobrescrever**: a
+  implementação padrão segue redirects no cliente, o que não funciona no
+  Flutter Web por CORS. Um backend resolve isso.
+- Para trocar apenas o cliente HTTP (proxy, interceptador) sem reimplementar
+  nada, use `GoogleLocationPickerApi.httpClient`.
+
 ## Credits
 
 The google map from [Flutter's](https://github.com/flutter) [google_maps_flutter](https://pub.dev/packages/google_maps_flutter) package

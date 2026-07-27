@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -11,10 +10,8 @@ import 'package:google_map_location_picker/src/providers/location_provider.dart'
 import 'package:google_map_location_picker/src/utils/loading_builder.dart';
 import 'package:google_map_location_picker/src/utils/log.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 
-import 'model/location_adress.dart';
 import 'model/location_result.dart';
 import 'platform/factory.dart';
 import 'platform/interface.dart';
@@ -23,14 +20,14 @@ import 'utils/location_utils.dart';
 class MapPicker extends StatefulWidget {
   const MapPicker(
     this.apiKey, {
-    Key? key,
+    super.key,
     this.webMapsApiKey,
-    this.initialCenter,
-    this.initialZoom,
-    this.requiredGPS,
-    this.myLocationButtonEnabled,
-    this.layersButtonEnabled,
-    this.automaticallyAnimateToCurrentLocation,
+    this.initialCenter = const LatLng(45.521563, -122.677433),
+    this.initialZoom = 16,
+    this.requiredGPS = false,
+    this.myLocationButtonEnabled = false,
+    this.layersButtonEnabled = false,
+    this.automaticallyAnimateToCurrentLocation = true,
     this.mapStylePath,
     this.appBarColor,
     this.pinColor,
@@ -40,10 +37,10 @@ class MapPicker extends StatefulWidget {
     this.resultCardAlignment,
     this.resultCardDecoration,
     this.resultCardPadding,
-    this.language,
-    this.desiredAccuracy,
-    this.embedded,
-  }) : super(key: key);
+    this.language = 'en',
+    this.desiredAccuracy = LocationAccuracy.best,
+    this.embedded = false,
+  });
 
   final String apiKey;
 
@@ -52,13 +49,13 @@ class MapPicker extends StatefulWidget {
   /// Maps SDK Android/iOS habilitado, sem JS API. Se `null`, cai para `apiKey`.
   final String? webMapsApiKey;
 
-  final LatLng? initialCenter;
-  final double? initialZoom;
+  final LatLng initialCenter;
+  final double initialZoom;
 
-  final bool? requiredGPS;
-  final bool? myLocationButtonEnabled;
-  final bool? layersButtonEnabled;
-  final bool? automaticallyAnimateToCurrentLocation;
+  final bool requiredGPS;
+  final bool myLocationButtonEnabled;
+  final bool layersButtonEnabled;
+  final bool automaticallyAnimateToCurrentLocation;
 
   final String? mapStylePath;
 
@@ -67,18 +64,18 @@ class MapPicker extends StatefulWidget {
   final BoxDecoration? searchBarBoxDecoration;
   final String? hintText;
   final Widget? resultCardConfirmIcon;
-  final Alignment? resultCardAlignment;
+  final AlignmentGeometry? resultCardAlignment;
   final Decoration? resultCardDecoration;
-  final EdgeInsets? resultCardPadding;
+  final EdgeInsetsGeometry? resultCardPadding;
 
-  final String? language;
+  final String language;
 
-  final LocationAccuracy? desiredAccuracy;
+  final LocationAccuracy desiredAccuracy;
 
   /// Renderiza o picker em modo compacto (sem Scaffold de fundo, FABs reposicionados,
   /// card de resultado menor). Tipicamente acionado pelo `LocationPicker` quando
   /// `embedded == true`.
-  final bool? embedded;
+  final bool embedded;
 
   @override
   MapPickerState createState() => MapPickerState();
@@ -95,14 +92,43 @@ class MapPickerState extends State<MapPicker> {
 
   Position? _currentPosition;
 
-  String? _address;
+  /// Último resultado de reverse geocode do centro do mapa, consumido por
+  /// `_popResult`.
+  LocationResult? _lastGeocodeResult;
 
-  String? _placeId;
+  /// Coordenada para a qual [_geocodeFuture] foi criada. O `build` roda muitas
+  /// vezes por coordenada (troca de map type, chegada do GPS, rebuild do
+  /// provider); sem memoizar, cada um desses rebuilds criaria uma future nova e
+  /// o `FutureBuilder` voltaria ao estado `waiting`, piscando o spinner.
+  LatLng? _geocodedFor;
+  Future<LocationResult?>? _geocodeFuture;
 
-  LocationAdress? _locationAdress;
+  Future<LocationResult?> _addressFuture(LatLng? location) {
+    if (_geocodeFuture == null || location != _geocodedFor) {
+      _geocodedFor = location;
+      _geocodeFuture = getAddress(location).then((result) {
+        _lastGeocodeResult = result;
+        return result;
+      });
+    }
+    return _geocodeFuture!;
+  }
+
+  /// Tipos percorridos pelo FAB de camadas. `MapType.none` fica de fora de
+  /// propósito: no mapa nativo ele renderiza uma tela em branco, enquanto o
+  /// WebView o trata como `normal` — o mesmo clique dava resultados diferentes
+  /// por plataforma.
+  static const List<MapType> _cyclableMapTypes = <MapType>[
+    MapType.normal,
+    MapType.satellite,
+    MapType.terrain,
+    MapType.hybrid,
+  ];
 
   void _onToggleMapTypePressed() {
-    final MapType nextType = MapType.values[(_currentMapType.index + 1) % MapType.values.length];
+    final int currentIndex = _cyclableMapTypes.indexOf(_currentMapType);
+    final MapType nextType =
+        _cyclableMapTypes[(currentIndex + 1) % _cyclableMapTypes.length];
 
     setState(() => _currentMapType = nextType);
     mapImpl.setMapType(nextType);
@@ -121,11 +147,9 @@ class MapPickerState extends State<MapPicker> {
     Position? currentPosition;
     try {
       currentPosition = await Geolocator.getCurrentPosition(
-        locationSettings: LocationSettings(accuracy: widget.desiredAccuracy!),
+        locationSettings: LocationSettings(accuracy: widget.desiredAccuracy),
       );
       d("position = $currentPosition");
-
-      setState(() => _currentPosition = currentPosition);
     } catch (e) {
       currentPosition = null;
       d("_initCurrentLocation#e = $e");
@@ -136,7 +160,7 @@ class MapPickerState extends State<MapPicker> {
     setState(() => _currentPosition = currentPosition);
 
     final bool shouldAnimate =
-        forceAnimate || widget.automaticallyAnimateToCurrentLocation == true;
+        forceAnimate || widget.automaticallyAnimateToCurrentLocation;
     if (currentPosition != null && shouldAnimate) {
       moveToCurrentLocation(LatLng(currentPosition.latitude, currentPosition.longitude));
     }
@@ -154,13 +178,33 @@ class MapPickerState extends State<MapPicker> {
       apiKey: widget.webMapsApiKey ?? widget.apiKey,
     );
 
-    if (widget.automaticallyAnimateToCurrentLocation! && !widget.requiredGPS!) _initCurrentLocation();
+    if (widget.requiredGPS) {
+      // Antes isto era disparado dentro do build(): a cada rebuild o picker
+      // pedia permissão e uma nova leitura de GPS, e como _initCurrentLocation
+      // chama setState o próprio rebuild se realimentava enquanto a posição
+      // fosse nula.
+      _ensureGpsPermissionAndLocation();
+    } else if (widget.automaticallyAnimateToCurrentLocation) {
+      _initCurrentLocation();
+    }
 
     if (widget.mapStylePath != null) {
       rootBundle.loadString(widget.mapStylePath!).then((string) {
-        _mapStyle = string;
+        if (!mounted) return;
+        // setState porque o estilo chega depois do primeiro frame; sem ele o
+        // mapa nativo só aplicaria o estilo num rebuild casual, e o WebView
+        // (que só recebe o estilo no initializeMap) nunca o aplicaria.
+        setState(() => _mapStyle = string);
       });
     }
+  }
+
+  /// Fluxo de GPS obrigatório: garante a permissão e, uma vez concedida, lê a
+  /// posição atual. Roda uma única vez por montagem.
+  Future<void> _ensureGpsPermissionAndLocation() async {
+    await _checkGeolocationPermission();
+    if (!mounted || _currentPosition != null) return;
+    await _initCurrentLocation();
   }
 
   @override
@@ -169,17 +213,10 @@ class MapPickerState extends State<MapPicker> {
     super.dispose();
   }
 
-  bool get _isEmbedded => widget.embedded == true;
+  bool get _isEmbedded => widget.embedded;
 
   @override
   Widget build(BuildContext context) {
-    if (widget.requiredGPS!) {
-      _checkGeolocationPermission();
-      if (_currentPosition == null) _initCurrentLocation();
-    }
-
-    if (_currentPosition != null && dialogOpen != null) Navigator.of(context, rootNavigator: true).pop();
-
     final Widget body = Builder(
       builder: (context) {
         // No modo embedded nunca bloqueamos no spinner aguardando o GPS:
@@ -190,8 +227,8 @@ class MapPickerState extends State<MapPicker> {
         // uma UX ruim — o pin sobre o mapa estático já é feedback suficiente.
         if (!_isEmbedded &&
             _currentPosition == null &&
-            widget.automaticallyAnimateToCurrentLocation! &&
-            widget.requiredGPS!) {
+            widget.automaticallyAnimateToCurrentLocation &&
+            widget.requiredGPS) {
           return const Center(child: CircularProgressIndicator());
         }
 
@@ -229,8 +266,8 @@ class MapPickerState extends State<MapPicker> {
       child: Stack(
         children: <Widget>[
           mapImpl.buildWidget(
-            initialCenter: widget.initialCenter!,
-            initialZoom: widget.initialZoom!,
+            initialCenter: widget.initialCenter,
+            initialZoom: widget.initialZoom,
             mapType: _currentMapType,
             mapStyleJson: _mapStyle,
             myLocationEnabled: true,
@@ -268,12 +305,12 @@ class MapPickerState extends State<MapPicker> {
     // Em modo embedded reservamos espaço à direita para os controles nativos
     // do Google Maps (zoom +/-, Street View, etc.) que ficam ancorados no
     // canto inferior direito.
-    final EdgeInsets outerPadding = widget.resultCardPadding ??
+    final EdgeInsetsGeometry outerPadding = widget.resultCardPadding ??
         (embedded
             ? const EdgeInsets.only(left: 8, right: 64, top: 8, bottom: 8)
             : const EdgeInsets.all(16.0));
 
-    final EdgeInsets innerPadding = embedded
+    final EdgeInsetsGeometry innerPadding = embedded
         ? const EdgeInsets.symmetric(horizontal: 12, vertical: 8)
         : const EdgeInsets.all(16.0);
 
@@ -314,18 +351,16 @@ class MapPickerState extends State<MapPicker> {
                   children: <Widget>[
                     Flexible(
                       flex: 20,
-                      child: FutureLoadingBuilder<Map<String, String?>?>(
-                        future: getAddress(locationProvider.lastIdleLocation),
+                      child: FutureLoadingBuilder<LocationResult?>(
+                        future: _addressFuture(locationProvider.lastIdleLocation),
                         mutable: true,
                         loadingIndicator: const Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: <Widget>[CircularProgressIndicator()],
                         ),
                         builder: (context, data) {
-                          _address = data!["address"];
-                          _placeId = data["placeId"];
                           return Text(
-                            _address ?? S.of(context)?.unnamedPlace ?? 'Unnamed place',
+                            data?.address ?? S.of(context)?.unnamedPlace ?? 'Unnamed place',
                             style: TextStyle(fontSize: fontSize),
                             maxLines: maxLines,
                             overflow: TextOverflow.ellipsis,
@@ -349,49 +384,26 @@ class MapPickerState extends State<MapPicker> {
     Navigator.of(context).pop({
       'location': LocationResult(
         latLng: locationProvider.lastIdleLocation,
-        address: _address,
-        placeId: _placeId,
-        locationAdress: _locationAdress,
+        address: _lastGeocodeResult?.address,
+        placeId: _lastGeocodeResult?.placeId,
+        locationAddress: _lastGeocodeResult?.locationAddress,
       ),
     });
   }
 
-  Future<Map<String, String?>?> getAddress(LatLng? location) async {
+  /// Reverse geocode do centro do mapa. Devolve `null` quando não há
+  /// coordenada, quando a API falha ou quando não há resultados — o card
+  /// trata esse caso exibindo "Unnamed place".
+  Future<LocationResult?> getAddress(LatLng? location) async {
     // Sem coordenadas (mapa ainda não emitiu onCameraIdle / onMapReady) não
-    // faz sentido chamar a API — evita request inválida (latlng=null,null) e
-    // o RangeError de acessar results[0] num response com results: [].
-    if (location == null) {
-      return {"placeId": null, "address": null};
-    }
+    // faz sentido chamar a API — evita request inválida (latlng=null,null).
+    if (location == null) return null;
 
-    try {
-      final endpoint =
-          'https://maps.googleapis.com/maps/api/geocode/json?latlng=${location.latitude},${location.longitude}'
-          '&key=${widget.apiKey}&language=${widget.language}';
-
-      final response = jsonDecode(
-        (await http.get(Uri.parse(endpoint), headers: await (LocationPickerUtils.getAppHeaders()))).body,
-      );
-
-      debugPrint("BLB data: $response ==> $endpoint");
-
-      final List<dynamic>? results = response['results'] as List<dynamic>?;
-      if (results == null || results.isEmpty) {
-        return {"placeId": null, "address": null};
-      }
-
-      final Map<String, dynamic> first = results[0] as Map<String, dynamic>;
-      _locationAdress = LocationAdress.fromMap(first);
-
-      return {
-        "placeId": first['place_id'] as String?,
-        "address": first['formatted_address'] as String?,
-      };
-    } catch (e) {
-      debugPrint("BLB $e");
-    }
-
-    return {"placeId": null, "address": null};
+    return LocationPickerUtils.reverseGeocode(
+      apiKey: widget.apiKey,
+      latLng: location,
+      language: widget.language,
+    );
   }
 
   Widget pin() {
@@ -414,139 +426,136 @@ class MapPickerState extends State<MapPicker> {
     );
   }
 
-  var dialogOpen;
+  /// `true` enquanto um dos diálogos de permissão está na tela. Era um campo
+  /// `dynamic` que guardava a `Future` do `showDialog` mas só era consultado
+  /// como flag.
+  bool _permissionDialogOpen = false;
 
-  Future _checkGeolocationPermission() async {
+  Future<void> _checkGeolocationPermission() async {
     final geolocationStatus = await Geolocator.checkPermission();
     d("geolocationStatus = $geolocationStatus");
 
-    if (geolocationStatus == LocationPermission.denied && dialogOpen == null) {
-      dialogOpen = _showDeniedDialog();
-    } else if (geolocationStatus == LocationPermission.deniedForever && dialogOpen == null) {
-      dialogOpen = _showDeniedForeverDialog();
-    } else if (geolocationStatus == LocationPermission.whileInUse || geolocationStatus == LocationPermission.always) {
-      d('GeolocationStatus.granted');
+    if (!mounted) return;
 
-      if (dialogOpen != null) {
-        Navigator.of(context, rootNavigator: true).pop();
-        dialogOpen = null;
-      }
+    if (geolocationStatus == LocationPermission.denied &&
+        !_permissionDialogOpen) {
+      _permissionDialogOpen = true;
+      _showDeniedDialog();
+    } else if (geolocationStatus == LocationPermission.deniedForever &&
+        !_permissionDialogOpen) {
+      _permissionDialogOpen = true;
+      _showDeniedForeverDialog();
+    } else if (geolocationStatus == LocationPermission.whileInUse ||
+        geolocationStatus == LocationPermission.always) {
+      d('GeolocationStatus.granted');
+      _dismissPermissionDialog();
     }
   }
 
-  Future _showDeniedDialog() {
-    return showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        // ignore: deprecated_member_use
-        return WillPopScope(
-          onWillPop: () async {
-            Navigator.of(context, rootNavigator: true).pop();
-            Navigator.of(context, rootNavigator: true).pop();
-            return true;
-          },
-          child: AlertDialog(
-            title: Text(S.of(context)?.access_to_location_denied ?? 'Access to location denied'),
-            content: Text(
-              S.of(context)?.allow_access_to_the_location_services ?? 'Allow access to the location services.',
-            ),
-            actions: <Widget>[
-              TextButton(
-                child: Text(S.of(context)?.ok ?? 'Ok'),
-                onPressed: () {
-                  Navigator.of(context, rootNavigator: true).pop();
-                  _initCurrentLocation();
-                  dialogOpen = null;
-                },
-              ),
-            ],
-          ),
-        );
-      },
+  /// Fecha o diálogo de permissão, se houver. Substitui o `Navigator.pop`
+  /// condicional que rodava dentro do `build`.
+  void _dismissPermissionDialog() {
+    if (!_permissionDialogOpen) return;
+    _permissionDialogOpen = false;
+    if (mounted) Navigator.of(context, rootNavigator: true).pop();
+  }
+
+  Future<void> _showDeniedDialog() {
+    return _showPermissionDialog(
+      title: S.of(context)?.access_to_location_denied ??
+          'Access to location denied',
+      message: S.of(context)?.allow_access_to_the_location_services ??
+          'Allow access to the location services.',
+      onConfirm: _initCurrentLocation,
     );
   }
 
-  Future _showDeniedForeverDialog() {
-    return showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        // ignore: deprecated_member_use
-        return WillPopScope(
-          onWillPop: () async {
-            Navigator.of(context, rootNavigator: true).pop();
-            Navigator.of(context, rootNavigator: true).pop();
-            return true;
-          },
-          child: AlertDialog(
-            title: Text(
-              S.of(context)?.access_to_location_permanently_denied ?? 'Access to location permanently denied',
-            ),
-            content: Text(
-              S.of(context)?.allow_access_to_the_location_services_from_settings ??
-                  'Allow access to the location services for this App using the device settings.',
-            ),
-            actions: <Widget>[
-              TextButton(
-                child: Text(S.of(context)?.ok ?? 'Ok'),
-                onPressed: () {
-                  Navigator.of(context, rootNavigator: true).pop();
-                  Geolocator.openAppSettings();
-                  dialogOpen = null;
-                },
-              ),
-            ],
-          ),
-        );
-      },
+  Future<void> _showDeniedForeverDialog() {
+    return _showPermissionDialog(
+      title: S.of(context)?.access_to_location_permanently_denied ??
+          'Access to location permanently denied',
+      message:
+          S.of(context)?.allow_access_to_the_location_services_from_settings ??
+              'Allow access to the location services for this App using the '
+                  'device settings.',
+      onConfirm: Geolocator.openAppSettings,
     );
   }
 
-  // // TODO: 9/12/2020 this is no longer needed, remove in the next release
-  // Future _checkGps() async {
-  //   if (!(await Geolocator.isLocationServiceEnabled())) {
-  //     if (Theme.of(context).platform == TargetPlatform.android) {
-  //       showDialog(
-  //         context: context,
-  //         barrierDismissible: false,
-  //         builder: (BuildContext context) {
-  //           return AlertDialog(
-  //             title: Text(S.of(context)?.cant_get_current_location ??
-  //                 "Can't get current location"),
-  //             content: Text(S
-  //                     .of(context)
-  //                     ?.please_make_sure_you_enable_gps_and_try_again ??
-  //                 'Please make sure you enable GPS and try again'),
-  //             actions: <Widget>[
-  //               TextButton(
-  //                 child: Text('Ok'),
-  //                 onPressed: () {
-  //                   final AndroidIntent intent = AndroidIntent(
-  //                       action: 'android.settings.LOCATION_SOURCE_SETTINGS');
+  /// Diálogo de permissão de localização. Os dois casos (negada e negada
+  /// permanentemente) diferem só nos textos e na ação do botão.
+  Future<void> _showPermissionDialog({
+    required String title,
+    required String message,
+    required VoidCallback onConfirm,
+  }) {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => _LocationPermissionDialog(
+        title: title,
+        message: message,
+        confirmLabel: S.of(dialogContext)?.ok ?? 'Ok',
+        onConfirm: onConfirm,
+      ),
+    ).whenComplete(() => _permissionDialogOpen = false);
+  }
 
-  //                   intent.launch();
-  //                   Navigator.of(context, rootNavigator: true).pop();
-  //                 },
-  //               ),
-  //             ],
-  //           );
-  //         },
-  //       );
-  //     }
-  //   }
-  // }
+}
+
+/// Diálogo de permissão de localização. Não pode ser dispensado pelo botão
+/// voltar do Android sem sair do picker — daí o `PopScope` com `canPop: false`
+/// que fecha o diálogo e a rota do picker.
+class _LocationPermissionDialog extends StatelessWidget {
+  const _LocationPermissionDialog({
+    required this.title,
+    required this.message,
+    required this.confirmLabel,
+    required this.onConfirm,
+  });
+
+  final String title;
+  final String message;
+  final String confirmLabel;
+  final VoidCallback onConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (didPop) return;
+        final NavigatorState navigator =
+            Navigator.of(context, rootNavigator: true);
+        // Fecha o diálogo e, em seguida, o próprio picker.
+        navigator.pop();
+        navigator.pop();
+      },
+      child: AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () {
+              Navigator.of(context, rootNavigator: true).pop();
+              onConfirm();
+            },
+            child: Text(confirmLabel),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _MapFabs extends StatelessWidget {
   const _MapFabs({
-    Key? key,
     required this.myLocationButtonEnabled,
     required this.layersButtonEnabled,
     required this.onToggleMapTypePressed,
     required this.onMyLocationPressed,
     this.embedded = false,
-  }) : super(key: key);
+  });
 
   final bool? myLocationButtonEnabled;
   final bool? layersButtonEnabled;
@@ -575,8 +584,8 @@ class _MapFabs extends StatelessWidget {
                 onPressed: onToggleMapTypePressed,
                 materialTapTargetSize: MaterialTapTargetSize.padded,
                 mini: true,
-                child: const Icon(Icons.layers),
                 heroTag: "layers",
+                child: const Icon(Icons.layers),
               ),
             ),
           if (myLocationButtonEnabled!)
@@ -584,8 +593,8 @@ class _MapFabs extends StatelessWidget {
               onPressed: onMyLocationPressed,
               materialTapTargetSize: MaterialTapTargetSize.padded,
               mini: true,
-              child: const Icon(Icons.my_location),
               heroTag: "myLocation",
+              child: const Icon(Icons.my_location),
             ),
         ],
       ),

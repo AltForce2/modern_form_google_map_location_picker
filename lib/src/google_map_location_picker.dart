@@ -1,8 +1,5 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:math';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -13,26 +10,23 @@ import 'package:google_map_location_picker/src/rich_suggestion.dart';
 import 'package:google_map_location_picker/src/search_input.dart';
 import 'package:google_map_location_picker/src/utils/uuid.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 
-import 'model/auto_comp_iete_item.dart';
-import 'model/location_adress.dart';
+import 'api/location_picker_api.dart';
 import 'model/location_result.dart';
-import 'model/nearby_place.dart';
 import 'utils/location_utils.dart';
 
 class LocationPicker extends StatefulWidget {
-  LocationPicker(
+  const LocationPicker(
     this.apiKey, {
-    Key? key,
+    super.key,
     this.webMapsApiKey,
-    this.initialCenter,
-    this.initialZoom,
-    this.requiredGPS,
-    this.myLocationButtonEnabled,
-    this.layersButtonEnabled,
-    this.automaticallyAnimateToCurrentLocation,
+    this.initialCenter = const LatLng(45.521563, -122.677433),
+    this.initialZoom = 16,
+    this.requiredGPS = false,
+    this.myLocationButtonEnabled = false,
+    this.layersButtonEnabled = false,
+    this.automaticallyAnimateToCurrentLocation = true,
     this.mapStylePath,
     this.appBarColor,
     this.pinColor,
@@ -43,10 +37,10 @@ class LocationPicker extends StatefulWidget {
     this.resultCardDecoration,
     this.resultCardPadding,
     this.countries,
-    this.language,
-    this.desiredAccuracy,
-    this.searchInputEnabled,
-    this.embedded,
+    this.language = 'en',
+    this.desiredAccuracy = LocationAccuracy.best,
+    this.searchInputEnabled = true,
+    this.embedded = false,
     this.onAutoConfirm,
   });
 
@@ -57,15 +51,15 @@ class LocationPicker extends StatefulWidget {
   /// Maps SDK Android/iOS habilitado, sem JS API. Se `null`, cai para `apiKey`.
   final String? webMapsApiKey;
 
-  final LatLng? initialCenter;
-  final double? initialZoom;
+  final LatLng initialCenter;
+  final double initialZoom;
   final List<String>? countries;
 
-  final bool? requiredGPS;
-  final bool? myLocationButtonEnabled;
-  final bool? layersButtonEnabled;
-  final bool? automaticallyAnimateToCurrentLocation;
-  final bool? searchInputEnabled;
+  final bool requiredGPS;
+  final bool myLocationButtonEnabled;
+  final bool layersButtonEnabled;
+  final bool automaticallyAnimateToCurrentLocation;
+  final bool searchInputEnabled;
 
   final String? mapStylePath;
 
@@ -74,19 +68,19 @@ class LocationPicker extends StatefulWidget {
   final BoxDecoration? searchBarBoxDecoration;
   final String? hintText;
   final Widget? resultCardConfirmIcon;
-  final Alignment? resultCardAlignment;
+  final AlignmentGeometry? resultCardAlignment;
   final Decoration? resultCardDecoration;
-  final EdgeInsets? resultCardPadding;
+  final EdgeInsetsGeometry? resultCardPadding;
 
-  final String? language;
+  final String language;
 
-  final LocationAccuracy? desiredAccuracy;
+  final LocationAccuracy desiredAccuracy;
 
   /// Quando `true`, renderiza o picker em modo compacto, sem `Scaffold`/`AppBar`,
   /// com bordas arredondadas, card de localização menor e absorção do scroll
   /// do mouse (evita que o scroll role um `Scrollable` pai no desktop/web).
   /// O `SearchInput` é movido para o topo do mapa como overlay.
-  final bool? embedded;
+  final bool embedded;
 
   /// Disparado em modo `embedded` quando o usuário escolhe uma sugestão da
   /// busca de autocomplete — antes da animação do mapa terminar. Permite que
@@ -105,18 +99,12 @@ class LocationPickerState extends State<LocationPicker> {
   /// Overlay to display autocomplete suggestions
   OverlayEntry? overlayEntry;
 
-  List<NearbyPlace> nearbyPlaces = [];
-
   /// Session token required for autocomplete API call
   String sessionToken = Uuid().generateV4();
 
   var mapKey = GlobalKey<MapPickerState>();
 
   var appBarKey = GlobalKey();
-
-  var searchInputKey = GlobalKey<SearchInputState>();
-
-  bool hasSearchTerm = false;
 
   /// Hides the autocomplete overlay
   void clearOverlay() {
@@ -172,15 +160,12 @@ class LocationPickerState extends State<LocationPicker> {
   /// coordenadas e URL do Google Maps.
   Future<void> selectResolvedLatLng(LatLng latLng) async {
     clearOverlay();
-    moveToLocation(latLng);
-    if (widget.onAutoConfirm == null) return;
 
-    final LocationResult? result = await LocationPickerUtils.reverseGeocode(
-      apiKey: widget.apiKey,
-      latLng: latLng,
-      language: widget.language ?? 'en',
-    );
-    if (!mounted) return;
+    // `moveToLocation` já faz o reverse geocode — reaproveitamos o resultado
+    // em vez de pedir o mesmo ponto de novo.
+    final LocationResult? result = await moveToLocation(latLng);
+
+    if (!mounted || widget.onAutoConfirm == null) return;
     if (result != null) widget.onAutoConfirm!(result);
   }
 
@@ -191,9 +176,7 @@ class LocationPickerState extends State<LocationPicker> {
   void searchPlace(String place) {
     clearOverlay();
 
-    setState(() => hasSearchTerm = place.length > 0);
-
-    if (place.length < 1) return;
+    if (place.isEmpty) return;
 
     // Intercept 1: coordenadas lat/lng coladas — resolução imediata sem overlay.
     final LatLng? coordsLatLng = LocationPickerUtils.parseLatLng(place);
@@ -223,136 +206,72 @@ class LocationPickerState extends State<LocationPicker> {
     autoCompleteSearch(place);
   }
 
+  /// Geração da busca de autocomplete corrente. Uma resposta lenta de uma
+  /// busca antiga não deve sobrescrever as sugestões de uma busca mais nova.
+  int _autoCompleteGeneration = 0;
+
   /// Fetches the place autocomplete list with the query [place].
-  void autoCompleteSearch(String place) {
-    place = place.replaceAll(" ", "+");
+  Future<void> autoCompleteSearch(String place) async {
+    final int generation = ++_autoCompleteGeneration;
 
-    String autoCompleteUrl = kIsWeb
-        ? LocationPickerUtils.autoCompleteWebUrl
-        : LocationPickerUtils.autoCompleteUrl;
+    final List<PlaceSuggestion> suggestions =
+        await LocationPickerApi.instance.autocomplete(
+      apiKey: widget.apiKey,
+      input: place,
+      language: widget.language,
+      sessionToken: sessionToken,
+      countries: widget.countries,
+      locationBias: locationResult?.latLng,
+    );
 
-    final countries = widget.countries;
+    // Descarta resposta obsoleta (outra busca já saiu depois desta) e evita
+    // tocar no context após o unmount. Sem o clearOverlay no caminho de erro,
+    // o overlay "Finding place..." ficava preso na tela.
+    if (!mounted || generation != _autoCompleteGeneration) return;
 
-    // Currently, you can use components to filter by up to 5 countries. from https://developers.google.com/places/web-service/autocomplete
-    String regionParam = countries?.isNotEmpty == true
-        ? "&components=country:${countries!.sublist(0, min(countries.length, 5)).join('|country:')}"
-        : "";
-
-    var endpoint = "$autoCompleteUrl?" +
-        "key=${widget.apiKey}&" +
-        "input={$place}$regionParam&sessiontoken=$sessionToken&" +
-        "language=${widget.language}";
-
-    if (locationResult != null) {
-      endpoint += "&location=${locationResult!.latLng!.latitude}," +
-          "${locationResult!.latLng!.longitude}";
-    }
-
-    debugPrint("endpoint --> $endpoint");
-
-    LocationPickerUtils.getAppHeaders()
-        .then((headers) => http.get(Uri.parse(endpoint), headers: headers))
-        .then((response) {
-      if (response.statusCode == 200) {
-        Map<String, dynamic> data = jsonDecode(response.body);
-        List<dynamic> predictions = data['predictions'];
-
-        List<RichSuggestion> suggestions = [];
-
-        if (predictions.isEmpty) {
-          AutoCompleteItem aci = AutoCompleteItem();
-          aci.text = S.of(context)?.no_result_found ?? 'No result found';
-          aci.offset = 0;
-          aci.length = 0;
-
-          suggestions.add(RichSuggestion(aci, () {}));
-        } else {
-          for (dynamic t in predictions) {
-            AutoCompleteItem aci = AutoCompleteItem();
-
-            aci.id = t['place_id'];
-            aci.text = t['description'];
-            aci.offset = t['matched_substrings'][0]['offset'];
-            aci.length = t['matched_substrings'][0]['length'];
-
-            suggestions.add(RichSuggestion(aci, () {
-              decodeAndSelectPlace(aci.id);
-            }));
-          }
-        }
-
-        displayAutoCompleteSuggestions(suggestions);
-      }
-    }).catchError((error) {
-      debugPrint(error);
-    });
+    displayAutoCompleteSuggestions(
+      suggestions.isEmpty
+          ? <RichSuggestion>[RichSuggestion(_noResultSuggestion(context), () {})]
+          : suggestions
+              .map((s) =>
+                  RichSuggestion(s, () => decodeAndSelectPlace(s.id)))
+              .toList(),
+    );
   }
+
+  PlaceSuggestion _noResultSuggestion(BuildContext context) => PlaceSuggestion(
+        description: S.of(context)?.no_result_found ?? 'No result found',
+      );
 
   /// To navigate to the selected place from the autocomplete list to the map,
   /// the lat,lng is required. This method fetches the lat,lng of the place and
   /// proceeds to moving the map to that location.
-  void decodeAndSelectPlace(String? placeId) {
+  Future<void> decodeAndSelectPlace(String? placeId) async {
     clearOverlay();
+    if (placeId == null) return;
 
-    String detailsUrl = kIsWeb
-        ? LocationPickerUtils.detailsWebUrl
-        : LocationPickerUtils.detailsUrl;
-
-    final endpoint = "$detailsUrl?key=${widget.apiKey}" +
-        "&placeid=$placeId" +
-        '&language=${widget.language}';
-
-    LocationPickerUtils.getAppHeaders()
-        .then((headers) => http.get(Uri.parse(endpoint), headers: headers))
-        .then((response) {
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> result =
-            jsonDecode(response.body)['result'] as Map<String, dynamic>;
-        final Map<String, dynamic> location =
-            result['geometry']['location'] as Map<String, dynamic>;
-
-        LatLng latLng = LatLng(location['lat'], location['lng']);
-
-        moveToLocation(latLng);
-
-        if (widget.onAutoConfirm != null) {
-          _resolveAutoConfirmResult(
-            latLng: latLng,
-            detailsResult: result,
-          ).then((LocationResult res) {
-            if (!mounted) return;
-            widget.onAutoConfirm!(res);
-          });
-        }
-      }
-    }).catchError((error) {
-      debugPrint(error);
-    });
-  }
-
-  /// Monta o `LocationResult` usado pelo callback `onAutoConfirm`. Faz reverse
-  /// geocoding em `latLng` para obter `address_components` confiáveis (rua,
-  /// número, bairro, CEP) — o Places Details, dependendo do tipo do place
-  /// (cidade, estabelecimento), não retorna esses campos. Em caso de falha
-  /// do geocode, cai para o que vier do próprio Places Details.
-  Future<LocationResult> _resolveAutoConfirmResult({
-    required LatLng latLng,
-    required Map<String, dynamic> detailsResult,
-  }) async {
-    final LocationResult? geocoded = await LocationPickerUtils.reverseGeocode(
+    final PlaceDetails? details = await LocationPickerApi.instance.placeDetails(
       apiKey: widget.apiKey,
-      latLng: latLng,
-      language: widget.language ?? 'en',
+      placeId: placeId,
+      language: widget.language,
+      sessionToken: sessionToken,
     );
 
-    if (geocoded != null) return geocoded;
+    // Enviar o sessiontoken no Details fecha a sessão de billing aberta pelo
+    // Autocomplete. A próxima busca precisa começar com um token novo.
+    sessionToken = Uuid().generateV4();
 
-    return LocationResult(
-      latLng: latLng,
-      address: detailsResult['formatted_address'] as String?,
-      placeId: detailsResult['place_id'] as String?,
-      locationAdress: LocationAdress.fromMap(detailsResult),
-    );
+    if (!mounted || details == null) return;
+
+    // `moveToLocation` já faz o reverse geocode — reaproveitamos o resultado
+    // em vez de consultar o mesmo ponto uma segunda vez.
+    final LocationResult? geocoded = await moveToLocation(details.latLng);
+
+    if (!mounted || widget.onAutoConfirm == null) return;
+    // O geocode é preferido porque traz os `address_components` completos; o
+    // Details não os retorna para alguns tipos de place (cidade,
+    // estabelecimento). Se ele falhar, caímos no que veio do Details.
+    widget.onAutoConfirm!(geocoded ?? details.toLocationResult());
   }
 
   /// Display autocomplete suggestions with the overlay.
@@ -376,113 +295,29 @@ class LocationPickerState extends State<LocationPicker> {
     Overlay.of(context).insert(overlayEntry!);
   }
 
-  /// Utility function to get clean readable name of a location. First checks
-  /// for a human-readable name from the nearby list. This helps in the cases
-  /// that the user selects from the nearby list (and expects to see that as a
-  /// result, instead of road name). If no name is found from the nearby list,
-  /// then the road name returned is used instead.
-  //  String getLocationName() {
-  //    if (locationResult == null) {
-  //      return "Unnamed location";
-  //    }
-  //
-  //    for (NearbyPlace np in nearbyPlaces) {
-  //      if (np.latLng == locationResult.latLng) {
-  //        locationResult.name = np.name;
-  //        return np.name;
-  //      }
-  //    }
-  //
-  //    return "${locationResult.name}, ${locationResult.locality}";
-  //  }
-
-  /// Fetches and updates the nearby places to the provided lat,lng
-  void getNearbyPlaces(LatLng latLng) {
-    LocationPickerUtils.getAppHeaders().then((headers) {
-      var endpoint =
-          "https://maps.googleapis.com/maps/api/place/nearbysearch/json?" +
-              "key=${widget.apiKey}&" +
-              "location=${latLng.latitude},${latLng.longitude}&radius=150" +
-              "&language=${widget.language}";
-
-      return http.get(Uri.parse(endpoint), headers: headers);
-    }).then((response) {
-      if (response.statusCode == 200) {
-        nearbyPlaces.clear();
-        for (Map<String, dynamic> item
-            in jsonDecode(response.body)['results']) {
-          NearbyPlace nearbyPlace = NearbyPlace();
-
-          nearbyPlace.name = item['name'];
-          nearbyPlace.icon = item['icon'];
-          double latitude = item['geometry']['location']['lat'];
-          double longitude = item['geometry']['location']['lng'];
-
-          LatLng _latLng = LatLng(latitude, longitude);
-
-          nearbyPlace.latLng = _latLng;
-
-          nearbyPlaces.add(nearbyPlace);
-        }
-      }
-
-      // to update the nearby places
-      setState(() {
-        // this is to require the result to show
-        hasSearchTerm = false;
-      });
-    }).catchError((error) {});
-  }
-
-  /// This method gets the human readable name of the location. Mostly appears
-  /// to be the road name and the locality.
-  Future reverseGeocodeLatLng(LatLng latLng) async {
-    final endpoint =
-        "https://maps.googleapis.com/maps/api/geocode/json?latlng=${latLng.latitude},${latLng.longitude}" +
-            "&key=${widget.apiKey}" +
-            "&language=${widget.language}";
-
-    final response = await http.get(
-      Uri.parse(endpoint),
-      headers: await LocationPickerUtils.getAppHeaders(),
+  /// Resolve o endereço de [latLng] e guarda em [locationResult]. Delega para
+  /// `LocationPickerUtils.reverseGeocode`, que aplica cache e single-flight —
+  /// chamadas concorrentes do mesmo ponto custam uma única requisição.
+  Future<LocationResult?> reverseGeocodeLatLng(LatLng latLng) async {
+    final LocationResult? result = await LocationPickerUtils.reverseGeocode(
+      apiKey: widget.apiKey,
+      latLng: latLng,
+      language: widget.language,
     );
 
-    if (response.statusCode == 200) {
-      Map<String, dynamic> responseJson = jsonDecode(response.body);
+    if (result == null || !mounted) return result;
 
-      String? road;
-
-      String? placeId = responseJson['results'][0]['place_id'];
-
-      if (responseJson['status'] == 'REQUEST_DENIED') {
-        road = 'REQUEST DENIED = please see log for more details';
-        debugPrint(responseJson['error_message']);
-      } else {
-        // road =
-        //     responseJson['results'][0]['address_components'][0]['short_name'];
-        road = responseJson['results'][0]['address_components'][0]['long_name'];
-      }
-
-      //      String locality =
-      //          responseJson['results'][0]['address_components'][1]['short_name'];
-
-      setState(() {
-        locationResult = LocationResult();
-        locationResult!.address = road;
-        locationResult!.latLng = latLng;
-        locationResult!.placeId = placeId;
-      });
-    }
+    setState(() => locationResult = result);
+    return result;
   }
 
   /// Moves the camera to the provided location and updates other UI features to
-  /// match the location.
-  void moveToLocation(LatLng latLng) {
+  /// match the location. Devolve o resultado do reverse geocode para quem
+  /// precisar dele, evitando uma segunda consulta.
+  Future<LocationResult?> moveToLocation(LatLng latLng) {
     mapKey.currentState!.mapImpl.animateCamera(latLng, 16);
 
-    reverseGeocodeLatLng(latLng);
-
-    getNearbyPlaces(latLng);
+    return reverseGeocodeLatLng(latLng);
   }
 
   @override
@@ -544,13 +379,11 @@ class LocationPickerState extends State<LocationPicker> {
     };
   }
 
-  bool get _searchInputVisible =>
-      widget.searchInputEnabled == null || widget.searchInputEnabled == true;
+  bool get _searchInputVisible => widget.searchInputEnabled;
 
   Widget _buildSearchInput() {
     return SearchInput(
-      (input) => searchPlace(input),
-      key: searchInputKey,
+      searchPlace,
       boxDecoration: widget.searchBarBoxDecoration,
       hintText: widget.hintText,
     );
@@ -671,7 +504,7 @@ Future<LocationResult?> showLocationPicker(
   String language = 'en',
   LocationAccuracy desiredAccuracy = LocationAccuracy.best,
   Color? pinColor,
-  bool? searchInputEnabled,
+  bool searchInputEnabled = true,
 }) async {
   final results = await Navigator.of(context).push(
     MaterialPageRoute<dynamic>(
@@ -692,8 +525,8 @@ Future<LocationResult?> showLocationPicker(
           hintText: hintText,
           searchBarBoxDecoration: searchBarBoxDecoration,
           resultCardConfirmIcon: resultCardConfirmIcon,
-          resultCardAlignment: resultCardAlignment as Alignment?,
-          resultCardPadding: resultCardPadding as EdgeInsets?,
+          resultCardAlignment: resultCardAlignment,
+          resultCardPadding: resultCardPadding,
           resultCardDecoration: resultCardDecoration,
           countries: countries,
           language: language,

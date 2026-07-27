@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
-import 'model/auto_comp_iete_item.dart';
+import 'api/location_picker_api.dart';
 
 class RichSuggestion extends StatelessWidget {
   final VoidCallback onTap;
-  final AutoCompleteItem autoCompleteItem;
+  final PlaceSuggestion suggestion;
 
-  RichSuggestion(this.autoCompleteItem, this.onTap);
+  const RichSuggestion(this.suggestion, this.onTap, {super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -29,48 +29,41 @@ class RichSuggestion extends StatelessWidget {
     );
   }
 
+  /// Divide o texto da sugestão em três trechos (antes / casado / depois).
+  /// Os offsets vêm do `matched_substrings` da API, então são recortados
+  /// contra o tamanho real do texto — valores inconsistentes estouravam
+  /// `RangeError` dentro do `substring`.
   List<TextSpan> getStyledTexts(BuildContext context) {
+    const TextStyle normalStyle = TextStyle(
+      color: Colors.grey,
+      fontSize: 15,
+      fontWeight: FontWeight.w300,
+    );
+    const TextStyle boldStyle = TextStyle(
+      color: Colors.grey,
+      fontSize: 15,
+      fontWeight: FontWeight.w500,
+    );
+
+    final String text = suggestion.description;
+    final int start = suggestion.matchOffset.clamp(0, text.length);
+    final int end =
+        (start + suggestion.matchLength).clamp(start, text.length);
+
     final List<TextSpan> result = [];
 
-    String startText =
-        autoCompleteItem.text!.substring(0, autoCompleteItem.offset);
-    if (startText.isNotEmpty) {
-      result.add(
-        TextSpan(
-          text: startText,
-          style: TextStyle(
-            color: Colors.grey,
-            fontSize: 15,
-            fontWeight: FontWeight.w300,
-          ),
-        ),
-      );
+    if (start > 0) {
+      result.add(TextSpan(text: text.substring(0, start), style: normalStyle));
     }
-
-    String boldText = autoCompleteItem.text!.substring(autoCompleteItem.offset!,
-        autoCompleteItem.offset! + autoCompleteItem.length!);
-
-    result.add(
-      TextSpan(
-        text: boldText,
-        style: TextStyle(
-          color: Colors.grey,
-          fontSize: 15,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
-    );
-
-    String remainingText = this
-        .autoCompleteItem
-        .text!
-        .substring(autoCompleteItem.offset! + autoCompleteItem.length!);
-    result.add(
-      TextSpan(
-        text: remainingText,
-        style: TextStyle(color: Colors.grey, fontSize: 15),
-      ),
-    );
+    if (end > start) {
+      result.add(TextSpan(text: text.substring(start, end), style: boldStyle));
+    }
+    if (end < text.length) {
+      result.add(TextSpan(
+        text: text.substring(end),
+        style: const TextStyle(color: Colors.grey, fontSize: 15),
+      ));
+    }
 
     return result;
   }

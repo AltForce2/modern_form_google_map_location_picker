@@ -1,4 +1,10 @@
-#include: package:flutter_lints/flutter.yaml
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    # Código gerado pelo plugin Flutter Intl (Localizely). É sobrescrito a cada
+    # regeneração, então corrigir lint aqui à mão não se sustenta.
+    - lib/generated/**
 
 # Additional information about this file can be found at
 # https://dart.dev/guides/language/analysis-options

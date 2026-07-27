@@ -6,27 +6,27 @@ import 'package:google_map_location_picker/generated/l10n.dart';
 
 import 'log.dart';
 
-typedef WidgetBuilder<T> = Widget Function(BuildContext context, T snapshot);
+/// Assinatura do builder de dados. Recebe `T?` porque o dado de um
+/// `FutureBuilder` é sempre nulo até a future completar.
+typedef AsyncDataWidgetBuilder<T> = Widget Function(
+  BuildContext context,
+  T? snapshot,
+);
 
 class FutureLoadingBuilder<T> extends StatefulWidget {
   const FutureLoadingBuilder({
-    Key? key,
+    super.key,
     required this.future,
     this.initialData,
     required this.builder,
     this.mutable = false,
     this.loadingIndicator,
-  }) : assert(builder != null),
-       super(key: key);
+  });
 
-  /// The asynchronous computation to which this builder is currently connected,
-  /// possibly null.
-  ///
-  /// If no future has yet completed, including in the case where [future] is
-  /// null, the data provided to the [builder] will be set to [initialData].
+  /// The asynchronous computation to which this builder is currently connected.
   final Future<T> future;
 
-  final WidgetBuilder<T>? builder;
+  final AsyncDataWidgetBuilder<T> builder;
 
   /// The data that will be used to create the snapshots provided until a
   /// non-null [future] has completed.
@@ -37,20 +37,19 @@ class FutureLoadingBuilder<T> extends StatefulWidget {
   /// [AsyncSnapshot.hasError] will be true.)
   final T? initialData;
 
-  /// default is true
-  ///
-  /// set to false if the future will change.
+  /// Quando `true`, usa sempre a [future] recebida no build corrente em vez de
+  /// fixar a primeira. Deixe `false` se a future não mudar.
   final bool mutable;
 
   final Widget? loadingIndicator;
 
   @override
-  _FutureLoadingBuilderState<T> createState() =>
+  State<FutureLoadingBuilder<T>> createState() =>
       _FutureLoadingBuilderState<T>();
 }
 
-class _FutureLoadingBuilderState<T> extends State<FutureLoadingBuilder<T?>> {
-  Future<T?>? future;
+class _FutureLoadingBuilderState<T> extends State<FutureLoadingBuilder<T>> {
+  Future<T>? future;
 
   @override
   void initState() {
@@ -60,18 +59,18 @@ class _FutureLoadingBuilderState<T> extends State<FutureLoadingBuilder<T?>> {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<T?>(
+    return FutureBuilder<T>(
       future: widget.mutable ? widget.future : future,
       initialData: widget.initialData,
-      builder: (BuildContext context, AsyncSnapshot snapshot) {
+      builder: (BuildContext context, AsyncSnapshot<T> snapshot) {
         switch (snapshot.connectionState) {
           case ConnectionState.none:
-            break;
           case ConnectionState.active:
             break;
+
           case ConnectionState.waiting:
             return widget.loadingIndicator ??
-                Center(child: CircularProgressIndicator());
+                const Center(child: CircularProgressIndicator());
 
           case ConnectionState.done:
             if (snapshot.hasError) {
@@ -93,14 +92,18 @@ class _FutureLoadingBuilderState<T> extends State<FutureLoadingBuilder<T?>> {
                   overflow: TextOverflow.fade,
                 );
               } else {
-                d('Unknow error: $error');
-                return Center(child: Text('Unknown error'));
+                d('Unknown error: $error');
+                return Center(
+                  child: Text(
+                    S.of(context)?.server_error ?? 'Unknown error',
+                    overflow: TextOverflow.fade,
+                  ),
+                );
               }
             }
-
-            return widget.builder!(context, snapshot.data);
         }
-        return widget.builder!(context, snapshot.data);
+
+        return widget.builder(context, snapshot.data);
       },
     );
   }
