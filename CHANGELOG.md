@@ -15,7 +15,18 @@
 * Parâmetros de `LocationPicker`/`MapPicker` que eram nulos com force-unwrap (`requiredGPS`, `initialCenter`, `initialZoom`, `language`, `desiredAccuracy`, `embedded`, …) agora são não-nulos com default. Usar `LocationPicker(apiKey)` diretamente estourava em `map.dart`.
 * `resultCardAlignment` e `resultCardPadding` aceitam `AlignmentGeometry`/`EdgeInsetsGeometry`; o cast interno para `Alignment`/`EdgeInsets` quebrava com as variantes direcionais.
 * `moveToLocation` e `reverseGeocodeLatLng` retornam `Future<LocationResult?>`.
-* Removidos: `LocationPickerMapFactory.isUsingWebView()/isUsingNative()`, `LocationPickerUtils.autoCompleteWebUrl`/`detailsWebUrl` (idênticos às versões não-web), `PlaceholderWidget`, `SearchInput.searchInputKey`.
+* Removidos: `LocationPickerMapFactory.isUsingWebView()/isUsingNative()`, `PlaceholderWidget`, `SearchInput.searchInputKey`.
+* **Removidos `autoCompleteWebUrl` e `detailsWebUrl`.** Eram uma URL pré-proxiada por endpoint, configurada no formato `X = "$proxy$X"` — que duplicava o prefixo se o inicializador rodasse duas vezes e deixava o geocoding de fora. Substituídos por `GoogleLocationPickerApi.corsProxy`, que cobre os três de uma vez e é idempotente:
+
+  ```dart
+  // antes
+  LocationPickerUtils.corsProxy = proxy;
+  LocationPickerUtils.autoCompleteWebUrl = '$proxy${LocationPickerUtils.autoCompleteWebUrl}';
+  LocationPickerUtils.detailsWebUrl = '$proxy${LocationPickerUtils.detailsWebUrl}';
+
+  // agora
+  GoogleLocationPickerApi.corsProxy = proxy;
+  ```
 * `AutoCompleteItem` (arquivo `auto_comp_iete_item.dart`) removido, substituído por `PlaceSuggestion` da camada de API — eram o mesmo modelo. `RichSuggestion` passou a receber `PlaceSuggestion`.
 * `LocationPickerUtils.httpClient`, `geocodeUrl`, `autoCompleteUrl`, `detailsUrl` e `getAppHeaders()` movidos para `GoogleLocationPickerApi`, onde a rede de fato acontece.
 
@@ -38,6 +49,7 @@
 
 ### Correções
 
+* **O `corsProxy` passou a valer para todas as chamadas REST do Google no Flutter Web**, não só para a expansão de link curto. As APIs de Geocoding e Places não enviam cabeçalhos CORS, então o navegador bloqueia a chamada direta; antes só autocomplete e details tinham como ser proxiados (via `autoCompleteWebUrl`/`detailsWebUrl`, um por endpoint) e o **geocoding não tinha variante Web nenhuma** — falhava por CORS no navegador.
 * **Parsing defensivo em todas as respostas do Google.** `results[0]`, `predictions`, `matched_substrings[0]` e `geometry.location` eram acessados sem guarda; o Google devolve HTTP 200 com `results: []` em `ZERO_RESULTS`/`REQUEST_DENIED`/`OVER_QUERY_LIMIT`. O `status` do corpo agora é checado e logado com `error_message`.
 * `LocationAddress.fromMap` tolera `address_components` ausente — o Places Details não retorna o campo para alguns tipos de place.
 * `RichSuggestion` recorta os offsets de `matched_substrings` contra o tamanho real do texto, em vez de estourar `RangeError` no `substring`.

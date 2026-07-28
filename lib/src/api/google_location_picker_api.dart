@@ -37,12 +37,26 @@ class GoogleLocationPickerApi extends LocationPickerApi {
   /// a página final, então é mais lenta que um salto isolado).
   static const Duration corsProxyTimeout = Duration(seconds: 10);
 
-  /// Prefixo de um proxy de CORS (ex.: `https://proxy.altfor.com.br/`) injetado
-  /// pelo app. Default vazio = sem proxy. Usado no Flutter Web para expandir
-  /// links curtos do Google Maps, contornando o bloqueio de CORS que impede
-  /// ler o header `Location` do redirect direto no navegador.
+  /// Prefixo de um proxy de CORS (ex.: `https://meu-proxy.com/`) injetado pelo
+  /// app. Default vazio = sem proxy. **Só tem efeito no Flutter Web.**
+  ///
+  /// O navegador bloqueia as chamadas REST do Google porque elas não enviam
+  /// cabeçalhos CORS. Com o prefixo configurado, todas passam a sair pelo
+  /// proxy: geocoding, autocomplete, place details e a expansão de link curto
+  /// (que além do CORS depende de ler o header `Location` do redirect).
+  ///
+  /// A URL de destino inteira, com querystring, é concatenada após o prefixo —
+  /// o proxy lê tudo que vem depois dele como endereço final.
+  ///
+  /// Substitui os antigos `autoCompleteWebUrl` e `detailsWebUrl`, que eram
+  /// sobrescritos um a um com a URL já proxiada. Uma chave em vez de três, e
+  /// agora o geocoding também é coberto — antes não tinha variante Web e
+  /// falhava por CORS no navegador.
   static String corsProxy = '';
 
+  /// Endpoints do Google. São mutáveis para permitir apontar para um gateway
+  /// próprio; para contornar CORS no web, prefira o [corsProxy], que já cobre
+  /// os três de uma vez.
   static String geocodeUrl =
       'https://maps.googleapis.com/maps/api/geocode/json';
   static String autoCompleteUrl =
@@ -331,12 +345,11 @@ class GoogleLocationPickerApi extends LocationPickerApi {
     String label,
   ) async {
     try {
-      final Uri base = Uri.parse(baseUrl);
-      final Uri uri = Uri(
-        scheme: base.scheme,
-        host: base.host,
-        path: base.path,
-        queryParameters: parameters,
+      // `replace` em vez de remontar a partir de scheme/host/path: o endpoint
+      // pode ser uma URL proxiada (`https://proxy/https://maps.googleapis...`),
+      // cujo path precisa sair intacto.
+      final Uri uri = _proxied(
+        Uri.parse(baseUrl).replace(queryParameters: parameters),
       );
 
       final http.Response response = await httpClient
@@ -364,6 +377,20 @@ class GoogleLocationPickerApi extends LocationPickerApi {
       debugPrint('$label failed: $e');
       return null;
     }
+  }
+
+  /// No Flutter Web, roteia a requisição pelo [corsProxy] quando ele está
+  /// configurado.
+  ///
+  /// As APIs REST do Google (Geocoding, Places) não enviam cabeçalhos CORS, e
+  /// por isso o navegador bloqueia a chamada direta. Fora do web devolve a URL
+  /// intacta.
+  ///
+  /// A convenção é a mesma do resto do proxy: a URL de destino inteira,
+  /// inclusive a querystring, é concatenada logo após o prefixo.
+  static Uri _proxied(Uri uri) {
+    if (!kIsWeb || corsProxy.isEmpty) return uri;
+    return Uri.parse('$corsProxy$uri');
   }
 
   static LatLng? _latLngFrom(Map<String, dynamic>? geometry) {
