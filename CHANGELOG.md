@@ -2,7 +2,7 @@
 
 ### Redução de custo da Geocoding API
 
-* **`LocationPickerUtils.reverseGeocode` e `forwardGeocode` agora têm cache e single-flight.** O resultado é cacheado por coordenada arredondada a 5 casas (~1 m) + idioma; chamadas concorrentes do mesmo ponto compartilham uma única requisição. Resultados `null` não são cacheados, para não fixar falha temporária. Este era o problema documentado em `REDUCAO_CUSTO_GEOCODING.md`: o picker consultava a mesma coordenada 2–3 vezes, sem cache.
+* **`LocationPickerUtils.reverseGeocode` e `forwardGeocode` agora têm cache e single-flight.** O resultado é cacheado por coordenada arredondada a 4 casas (~11 m) + idioma; chamadas concorrentes do mesmo ponto compartilham uma única requisição. Resultados `null` não são cacheados, para não fixar falha temporária. Este era o problema documentado em `REDUCAO_CUSTO_GEOCODING.md`: o picker consultava a mesma coordenada 2–3 vezes, sem cache.
 * **Os três caminhos redundantes de reverse geocode foram unificados.** `reverseGeocodeLatLng` deixou de montar a própria requisição HTTP e passou a usar `LocationPickerUtils.reverseGeocode`; `selectResolvedLatLng` e `decodeAndSelectPlace` reaproveitam o resultado que `moveToLocation` já produziu em vez de consultar de novo.
 * **`getNearbyPlaces` removido.** Chamava a Places Nearby Search a cada movimento de mapa e escrevia em `nearbyPlaces`, que ninguém lia — o único consumidor era um método comentado desde 2020. O modelo `NearbyPlace` foi removido junto.
 * **O card de endereço não refaz mais o geocode a cada rebuild.** A future é memoizada por coordenada; antes qualquer rebuild (troca de tipo de mapa, chegada do GPS) criava uma nova e disparava outra requisição cobrada.
@@ -20,6 +20,14 @@
 * `LocationPickerUtils.httpClient`, `geocodeUrl`, `autoCompleteUrl`, `detailsUrl` e `getAppHeaders()` movidos para `GoogleLocationPickerApi`, onde a rede de fato acontece.
 
 ### Novidades
+
+* **Adicionado `BackendLocationPickerApi`** — implementação pronta de `LocationPickerApi` para backends que expõem `/geocode/{reverse,forward,autocomplete,place/:id,expand-url}`. Instalar é uma linha no boot (`LocationPickerApi.instance = BackendLocationPickerApi(baseUrl: ..., headers: ...)`) e nenhum widget muda. Os headers são um callback assíncrono, para cobrir token que expira; se ele lançar, a chamada devolve `null` em vez de derrubar a tela. Detalhes de contrato: `404` vira `null` (não é erro), o `reverse` usa a coordenada **de entrada** — não a arredondada que o servidor devolve para cachear — e o `forward`/`place` usam a da resposta. Link longo do Maps é resolvido localmente, sem round-trip.
+
+* **`LocationAddress` ganhou `stateCode`, `countryCode` e `locationType`.** Os dois primeiros vêm do `short_name` de `administrative_area_level_1` e `country`; o terceiro do `geometry.location_type` — que o parser ignorava, mesmo já recebendo o `results[0]` inteiro. O `locationType` (`ROOFTOP`, `RANGE_INTERPOLATED`, `GEOMETRIC_CENTER`, `APPROXIMATE`) permite sinalizar na interface quando o endereço é aproximado e pode estar a centenas de metros do ponto. As chaves de `toMap()` são aditivas (`state_code`, `country_code`, `location_type`), então dados serializados antes continuam legíveis.
+
+* **Grid do cache de geocoding alinhado em 4 casas decimais (~11 m)**, o mesmo do backend de geocoding. Antes eram 5 casas (~1 m): dois pontos a poucos metros geravam duas chaves locais e dois round-trips que o servidor responderia do mesmo registro.
+
+* Adicionado `ENDPOINTS_GEOCODE_BACKEND.md` — especificação dos quatro endpoints que faltavam no backend para o picker parar de chamar o Google diretamente. `RETORNO_BACKEND_GEOCODE.md` registra a entrega dos quatro.
 
 * **Toda a rede passou para uma interface única e trocável: `LocationPickerApi`.** As cinco chamadas do pacote (reverse geocode, forward geocode, autocomplete, place details e resolução de link do Maps) passam por ela, e o `package:http` existe em um único arquivo — `GoogleLocationPickerApi`, a implementação padrão. Para deixar de bater direto no Google, implemente a interface e atribua `LocationPickerApi.instance = MinhaApi()` antes de abrir o picker; nenhum widget precisa mudar.
   * Os modelos de retorno (`PlaceSuggestion`, `PlaceDetails`) são do pacote, não o JSON cru do Google — uma implementação alternativa não precisa imitar `matched_substrings` nem `geometry.location`.

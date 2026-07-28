@@ -93,7 +93,11 @@ void main() {
       expect(results.every((r) => r?.address == 'Rua Teste, 100'), isTrue);
     });
 
-    test('coordenadas a ~1 m compartilham a mesma chave', () async {
+    test('coordenadas dentro do grid de ~11 m compartilham a mesma chave',
+        () async {
+      // O grid local usa 4 casas decimais, igual ao do backend de geocoding —
+      // assim dois pontos próximos não geram dois round-trips que o servidor
+      // responderia do mesmo registro.
       int calls = 0;
       GoogleLocationPickerApi.httpClient = MockClient((request) async {
         calls++;
@@ -101,13 +105,30 @@ void main() {
       });
 
       await LocationPickerUtils.reverseGeocode(apiKey: 'k', latLng: saoPaulo);
-      // 6ª casa decimal ≈ 0,1 m — abaixo da precisão de 5 casas da chave.
+      // 5ª casa decimal ≈ 1 m — dentro do grid de 4 casas.
       await LocationPickerUtils.reverseGeocode(
         apiKey: 'k',
-        latLng: const LatLng(-23.5505004, -46.6333004),
+        latLng: const LatLng(-23.55049, -46.63329),
       );
 
       expect(calls, 1);
+    });
+
+    test('coordenadas fora do grid geram chamadas distintas', () async {
+      int calls = 0;
+      GoogleLocationPickerApi.httpClient = MockClient((request) async {
+        calls++;
+        return http.Response(_okBody(), 200);
+      });
+
+      await LocationPickerUtils.reverseGeocode(apiKey: 'k', latLng: saoPaulo);
+      // ~50 m de distância: 4ª casa decimal diferente.
+      await LocationPickerUtils.reverseGeocode(
+        apiKey: 'k',
+        latLng: const LatLng(-23.5510, -46.6338),
+      );
+
+      expect(calls, 2);
     });
 
     test('idiomas diferentes não compartilham cache', () async {

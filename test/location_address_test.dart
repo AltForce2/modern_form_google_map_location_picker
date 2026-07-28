@@ -57,6 +57,68 @@ void main() {
       expect(address.route, 'Rua Boa');
     });
 
+    test('extrai stateCode e countryCode do short_name', () {
+      final address = LocationAddress.fromMap({
+        'address_components': [
+          {
+            'long_name': 'Paraná',
+            'short_name': 'PR',
+            'types': ['administrative_area_level_1'],
+          },
+          {
+            'long_name': 'Brasil',
+            'short_name': 'BR',
+            'types': ['country', 'political'],
+          },
+        ],
+      });
+
+      expect(address.administrativeAreaLevel1, 'Paraná');
+      expect(address.stateCode, 'PR');
+      expect(address.country, 'Brasil');
+      expect(address.countryCode, 'BR');
+    });
+
+    test('extrai locationType de geometry', () {
+      final address = LocationAddress.fromMap({
+        'geometry': {
+          'location_type': 'ROOFTOP',
+          'location': {'lat': -23.5, 'lng': -46.6},
+        },
+        'address_components': [component('Rua Teste', ['route'])],
+      });
+
+      expect(address.locationType, 'ROOFTOP');
+      expect(address.route, 'Rua Teste');
+    });
+
+    test('locationType é lido mesmo sem address_components', () {
+      // O Places Details de cidade/estabelecimento não traz address_components,
+      // mas traz geometry — o early-return não pode engolir o locationType.
+      final address = LocationAddress.fromMap({
+        'geometry': {'location_type': 'APPROXIMATE'},
+      });
+
+      expect(address.locationType, 'APPROXIMATE');
+      expect(address.route, isNull);
+    });
+
+    test('os três campos novos ficam nulos quando o payload não os traz', () {
+      final address = LocationAddress.fromMap({
+        'address_components': [
+          {
+            'long_name': 'Paraná',
+            'types': ['administrative_area_level_1'],
+          },
+        ],
+      });
+
+      expect(address.administrativeAreaLevel1, 'Paraná');
+      expect(address.stateCode, isNull);
+      expect(address.countryCode, isNull);
+      expect(address.locationType, isNull);
+    });
+
     test('ignora tipos desconhecidos', () {
       final address = LocationAddress.fromMap({
         'address_components': [
@@ -93,6 +155,19 @@ void main() {
       ]));
       expect(map['street_number'], '100');
       expect(map['postal_code'], '01310-100');
+    });
+
+    test('toMap expõe os campos novos em chaves aditivas', () {
+      // Aditivas: quem serializou antes destes campos continua sendo lido.
+      final map = LocationAddress(
+        stateCode: 'PR',
+        countryCode: 'BR',
+        locationType: 'ROOFTOP',
+      ).toMap();
+
+      expect(map['state_code'], 'PR');
+      expect(map['country_code'], 'BR');
+      expect(map['location_type'], 'ROOFTOP');
     });
 
     test('copyWith substitui só o informado', () {

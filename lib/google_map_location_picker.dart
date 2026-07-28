@@ -10,5 +10,6 @@ export 'src/utils/location_utils.dart';
 /// para um backend próprio em vez das APIs do Google.
 export 'src/api/location_picker_api.dart';
 export 'src/api/google_location_picker_api.dart';
+export 'src/api/backend_location_picker_api.dart';
 
 export 'package:geolocator/geolocator.dart';

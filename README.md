@@ -171,9 +171,67 @@ countries: ['AE', 'NG'],
 
 Toda a rede do pacote passa por uma interface só, `LocationPickerApi`. A
 implementação padrão (`GoogleLocationPickerApi`) fala direto com as APIs do
-Google; para roteirizar por um backend próprio — por exemplo, para compartilhar
-um cache de geocoding entre todos os usuários em vez de um cache por
-dispositivo — implemente a interface e instale a sua versão:
+Google.
+
+Roteirizar por um backend próprio troca o cache por dispositivo por um cache
+compartilhado entre todos os usuários — o primeiro que resolve um ponto paga,
+os demais reaproveitam — e permite restringir a chave do Google embarcada no
+app a Maps SDK / Maps JS API, sem Geocoding nem Places habilitados.
+
+### Caminho pronto: `BackendLocationPickerApi`
+
+Se o seu backend expõe os endpoints abaixo, não precisa escrever implementação
+nenhuma:
+
+| Método | Rota esperada |
+|---|---|
+| `reverseGeocode` | `GET /geocode/reverse?lat&lng&language` |
+| `forwardGeocode` | `GET /geocode/forward?address&language` |
+| `autocomplete` | `GET /geocode/autocomplete?input&language&sessionToken&countries&lat&lng` |
+| `placeDetails` | `GET /geocode/place/{placeId}?language&sessionToken` |
+| `resolveMapsUrl` | `GET /geocode/expand-url?url` |
+
+```dart
+void main() {
+  LocationPickerApi.instance = BackendLocationPickerApi(
+    baseUrl: 'https://api.exemplo.com',
+    headers: () async => {'authorization': await pegarToken()},
+  );
+  runApp(const MyApp());
+}
+```
+
+O `headers` é um **callback assíncrono**, não um `Map` fixo, porque um token de
+autenticação expira e precisa ser renovado entre uma chamada e outra. Se ele
+lançar, a chamada devolve `null` em vez de derrubar a tela.
+
+Os endpoints devolvem o corpo cru (sem envelope), com este objeto de endereço
+canônico em `reverse`, `forward` e `place`:
+
+```json
+{
+  "latitude": -25.2521, "longitude": -52.0215,
+  "formattedAddress": "R. XV de Novembro, 1200 - Centro, Turvo - PR",
+  "placeId": "ChIJ...", "street": "R. XV de Novembro", "number": "1200",
+  "neighborhood": "Centro", "city": "Turvo", "state": "Paraná",
+  "stateCode": "PR", "country": "Brasil", "countryCode": "BR",
+  "cep": "85150-000", "locationType": "ROOFTOP"
+}
+```
+
+Convenções que a implementação assume:
+
+- **`404` não é erro** — significa "não há endereço aqui" e vira `null`.
+- **No `reverse`, a coordenada usada é a que você passou**, não a da resposta:
+  servidores costumam arredondar num grid para cachear, e usar a arredondada
+  deslocaria o pin do ponto marcado. No `forward` e no `place` vale a da
+  resposta, porque ali a coordenada *é* o resultado.
+- Autocomplete sem resultado devolve `200` com `suggestions: []`, nunca `404`.
+- Todos os campos de endereço podem vir `null`.
+
+### Caminho customizado
+
+Se o seu backend tem outro formato, implemente a interface direto:
 
 ```dart
 class MinhaApi extends LocationPickerApi {

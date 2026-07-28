@@ -12,7 +12,7 @@ import '../model/location_result.dart';
 /// deduplicação por cima do geocoding, que vale para qualquer implementação
 /// de [LocationPickerApi].
 class LocationPickerUtils {
-  /// Cache de reverse geocoding por coordenada arredondada (~1 metro).
+  /// Cache de reverse geocoding por coordenada arredondada (~11 metros).
   /// Evita pagar de novo pelo mesmo ponto dentro da sessão.
   static final Map<String, LocationResult> _reverseCache = {};
 
@@ -26,11 +26,15 @@ class LocationPickerUtils {
   static final Map<String, LocationResult> _forwardCache = {};
   static final Map<String, Future<LocationResult?>> _forwardInFlight = {};
 
-  /// 5 casas decimais ≈ 1 metro. O `language` entra na chave porque a resposta
-  /// muda conforme o idioma.
+  /// 4 casas decimais ≈ 11 metros — o mesmo grid que o backend de geocoding
+  /// usa para agrupar coordenadas. Alinhar as duas camadas evita que dois
+  /// pontos a poucos metros gerem duas chaves locais e dois round-trips que o
+  /// servidor responderia do mesmo registro.
+  ///
+  /// O `language` entra na chave porque a resposta muda conforme o idioma.
   static String _coordKey(LatLng latLng, String language) =>
-      '${latLng.latitude.toStringAsFixed(5)},'
-      '${latLng.longitude.toStringAsFixed(5)}|$language';
+      '${latLng.latitude.toStringAsFixed(4)},'
+      '${latLng.longitude.toStringAsFixed(4)}|$language';
 
   static String _addressKey(String address, String language) =>
       '${address.trim().toLowerCase()}|$language';
@@ -65,7 +69,7 @@ class LocationPickerUtils {
   /// `address`, `placeId` e `locationAddress`. Retorna `null` se a chamada
   /// falhar ou não houver resultados.
   ///
-  /// O resultado é cacheado por coordenada (~1 m) + idioma, e chamadas
+  /// O resultado é cacheado por coordenada (~11 m) + idioma, e chamadas
   /// concorrentes do mesmo ponto compartilham uma única requisição. Delega a
   /// rede para [LocationPickerApi.instance].
   static Future<LocationResult?> reverseGeocode({
