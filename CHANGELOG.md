@@ -1,3 +1,11 @@
+## 10.1.0
+
+* **Adicionado `cameraIdleDebounce`** em `showLocationPicker`, `LocationPicker` e `MapPicker` — default 400 ms. Arrastar o mapa em etapas dispara um `onCameraIdle` por pausa, e cada um era um geocode cobrado; agora só a posição onde o usuário de fato parou é consultada. `Duration.zero` restaura o comportamento anterior.
+  * Voltar a mover cancela a consulta agendada na pausa anterior.
+  * A primeira posição (`onMapReady`) não espera — o card precisa mostrar algo assim que o mapa aparece.
+  * **Confirmar a seleção aplica a consulta pendente na hora e aguarda o endereço**, então o resultado devolvido sempre corresponde ao pin na tela. `_popResult` passou a ser assíncrono; em cache hit a diferença é imperceptível.
+* Adicionado `Debouncer` (`lib/src/utils/debouncer.dart`) — utilitário com `run`/`flush`/`cancel`, coberto por testes com tempo virtual (`fake_async`).
+
 ## 10.0.0
 
 ### Redução de custo da Geocoding API

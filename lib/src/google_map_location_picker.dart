@@ -41,6 +41,7 @@ class LocationPicker extends StatefulWidget {
     this.desiredAccuracy = LocationAccuracy.best,
     this.searchInputEnabled = true,
     this.embedded = false,
+    this.cameraIdleDebounce = const Duration(milliseconds: 400),
     this.onAutoConfirm,
   });
 
@@ -81,6 +82,11 @@ class LocationPicker extends StatefulWidget {
   /// do mouse (evita que o scroll role um `Scrollable` pai no desktop/web).
   /// O `SearchInput` é movido para o topo do mapa como overlay.
   final bool embedded;
+
+  /// Quanto tempo a câmera precisa ficar parada antes de o endereço ser
+  /// consultado. Arrastar o mapa em etapas dispara uma consulta por pausa;
+  /// o atraso deixa passar só a posição final. `Duration.zero` desliga.
+  final Duration cameraIdleDebounce;
 
   /// Disparado em modo `embedded` quando o usuário escolhe uma sugestão da
   /// busca de autocomplete — antes da animação do mapa terminar. Permite que
@@ -413,6 +419,7 @@ class LocationPickerState extends State<LocationPicker> {
       language: widget.language,
       desiredAccuracy: widget.desiredAccuracy,
       embedded: widget.embedded,
+      cameraIdleDebounce: widget.cameraIdleDebounce,
     );
   }
 
@@ -505,6 +512,7 @@ Future<LocationResult?> showLocationPicker(
   LocationAccuracy desiredAccuracy = LocationAccuracy.best,
   Color? pinColor,
   bool searchInputEnabled = true,
+  Duration cameraIdleDebounce = const Duration(milliseconds: 400),
 }) async {
   final results = await Navigator.of(context).push(
     MaterialPageRoute<dynamic>(
@@ -533,6 +541,7 @@ Future<LocationResult?> showLocationPicker(
           desiredAccuracy: desiredAccuracy,
           pinColor: pinColor,
           searchInputEnabled: searchInputEnabled,
+          cameraIdleDebounce: cameraIdleDebounce,
         );
       },
     ),

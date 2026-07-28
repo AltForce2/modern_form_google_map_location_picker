@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_map_location_picker/generated/l10n.dart';
 import 'package:google_map_location_picker/src/providers/location_provider.dart';
+import 'package:google_map_location_picker/src/utils/debouncer.dart';
 import 'package:google_map_location_picker/src/utils/loading_builder.dart';
 import 'package:google_map_location_picker/src/utils/log.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -40,6 +41,7 @@ class MapPicker extends StatefulWidget {
     this.language = 'en',
     this.desiredAccuracy = LocationAccuracy.best,
     this.embedded = false,
+    this.cameraIdleDebounce = const Duration(milliseconds: 400),
   });
 
   final String apiKey;
@@ -77,6 +79,20 @@ class MapPicker extends StatefulWidget {
   /// `embedded == true`.
   final bool embedded;
 
+  /// Quanto tempo a câmera precisa ficar parada antes de o endereço ser
+  /// consultado.
+  ///
+  /// Arrastar o mapa em etapas dispara um `onCameraIdle` por pausa, e cada um
+  /// deles é um geocode cobrado. Com o atraso, só a posição onde o usuário de
+  /// fato parou é consultada.
+  ///
+  /// O custo é o endereço aparecer esse tanto mais tarde depois de cada
+  /// parada. Use `Duration.zero` para consultar imediatamente, como antes.
+  ///
+  /// Confirmar a seleção não espera o prazo: a consulta pendente é executada
+  /// na hora, para o resultado bater com o pin na tela.
+  final Duration cameraIdleDebounce;
+
   @override
   MapPickerState createState() => MapPickerState();
 }
@@ -92,10 +108,6 @@ class MapPickerState extends State<MapPicker> {
 
   Position? _currentPosition;
 
-  /// Último resultado de reverse geocode do centro do mapa, consumido por
-  /// `_popResult`.
-  LocationResult? _lastGeocodeResult;
-
   /// Coordenada para a qual [_geocodeFuture] foi criada. O `build` roda muitas
   /// vezes por coordenada (troca de map type, chegada do GPS, rebuild do
   /// provider); sem memoizar, cada um desses rebuilds criaria uma future nova e
@@ -103,13 +115,21 @@ class MapPickerState extends State<MapPicker> {
   LatLng? _geocodedFor;
   Future<LocationResult?>? _geocodeFuture;
 
+  /// Segura a consulta de endereço até a câmera ficar parada de verdade.
+  /// Arrastar o mapa em etapas dispara um `onCameraIdle` por pausa.
+  late final Debouncer _idleDebouncer = Debouncer(widget.cameraIdleDebounce);
+
+  /// Publica a coordenada corrente, o que dispara o geocode via rebuild.
+  void _commitIdleLocation() {
+    if (!mounted) return;
+    LocationProvider.of(context, listen: false)
+        .setLastIdleLocation(_lastMapPosition);
+  }
+
   Future<LocationResult?> _addressFuture(LatLng? location) {
     if (_geocodeFuture == null || location != _geocodedFor) {
       _geocodedFor = location;
-      _geocodeFuture = getAddress(location).then((result) {
-        _lastGeocodeResult = result;
-        return result;
-      });
+      _geocodeFuture = getAddress(location);
     }
     return _geocodeFuture!;
   }
@@ -209,6 +229,7 @@ class MapPickerState extends State<MapPicker> {
 
   @override
   void dispose() {
+    _idleDebouncer.dispose();
     mapImpl.dispose();
     super.dispose();
   }
@@ -273,16 +294,17 @@ class MapPickerState extends State<MapPicker> {
             myLocationEnabled: true,
             gestureRecognizers: mapGestureRecognizers,
             onCameraMove: (target) => _lastMapPosition = target,
-            onCameraIdle: () {
-              debugPrint("onCameraIdle#_lastMapPosition = $_lastMapPosition");
-              LocationProvider.of(context, listen: false).setLastIdleLocation(_lastMapPosition);
-            },
+            onCameraIdle: () => _idleDebouncer.run(_commitIdleLocation),
             onCameraMoveStarted: () {
-              debugPrint("onCameraMoveStarted#_lastMapPosition = $_lastMapPosition");
+              // Voltou a se mover: a consulta agendada na pausa anterior não
+              // interessa mais.
+              _idleDebouncer.cancel();
             },
             onMapReady: () {
+              // Primeira posição: sem espera, é o que o card precisa mostrar
+              // assim que o mapa aparece.
               _lastMapPosition = widget.initialCenter;
-              LocationProvider.of(context, listen: false).setLastIdleLocation(_lastMapPosition);
+              _commitIdleLocation();
             },
           ),
           _MapFabs(
@@ -380,13 +402,23 @@ class MapPickerState extends State<MapPicker> {
     );
   }
 
-  void _popResult(LocationProvider locationProvider) {
+  Future<void> _popResult(LocationProvider locationProvider) async {
+    // Confirmar dentro da janela de espera não pode devolver a posição
+    // anterior: aplica agora a consulta pendente e aguarda o endereço, para o
+    // resultado corresponder ao pin que está na tela.
+    _idleDebouncer.flush();
+
+    final LatLng? target = locationProvider.lastIdleLocation;
+    final LocationResult? result = await _addressFuture(target);
+
+    if (!mounted) return;
+
     Navigator.of(context).pop({
       'location': LocationResult(
-        latLng: locationProvider.lastIdleLocation,
-        address: _lastGeocodeResult?.address,
-        placeId: _lastGeocodeResult?.placeId,
-        locationAddress: _lastGeocodeResult?.locationAddress,
+        latLng: target,
+        address: result?.address,
+        placeId: result?.placeId,
+        locationAddress: result?.locationAddress,
       ),
     });
   }

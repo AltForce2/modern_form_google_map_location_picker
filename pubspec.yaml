@@ -29,6 +29,9 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ">=6.0.0 <7.0.0"
+  # Controle de tempo virtual nos testes do Debouncer — evita `await` de
+  # centenas de ms na suíte.
+  fake_async: ">=1.3.0 <2.0.0"
 
 # The following section is specific to Flutter.
 flutter:
