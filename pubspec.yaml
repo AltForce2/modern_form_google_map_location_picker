@@ -1,6 +1,6 @@
 name: google_map_location_picker
 description: "🌍 Map location picker for flutter Based on google_maps_flutter"
-version: 10.2.0
+version: 10.3.0
 homepage: https://github.com/apps-auth/modern_form_google_map_location_picker.git
 
 environment:
@@ -22,7 +22,10 @@ dependencies:
   provider: ">=6.1.5 <7.0.0"
   http: ">=1.4.0 <2.0.0"
   stack_trace: ">=1.12.1 <2.0.0"
-  package_info_plus: ">=8.3.0 <9.0.0"
+  # Precisa alcançar a linha 10: só ela aceita win32 ^6, exigido por file_picker
+  # 12 e share_plus 13 no app. O uso aqui é um único PackageInfo.fromPlatform(),
+  # cuja API não mudou de 8 para 10, então a faixa larga é segura.
+  package_info_plus: ">=8.3.0 <11.0.0"
   plugin_platform_interface: ">=2.1.8 <3.0.0"
 
 dev_dependencies:
