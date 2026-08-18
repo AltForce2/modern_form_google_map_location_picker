@@ -11,3 +11,5 @@ lib/keys.dart
 /google_map_location_picker.iml
 /.idea
 /android/.idea/
+example/.flutter-plugins
+example/.flutter-plugins-dependencies
