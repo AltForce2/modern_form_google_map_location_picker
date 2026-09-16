@@ -55,5 +55,5 @@ class GoogleMapLocationPickerLocalizationsFr
   String get noResultFound => 'Aucun résultat trouvé';
 
   @override
-  String get unnamedPlace => 'Luogo senza nome';
+  String get unnamedPlace => 'Lieu sans nom';
 }

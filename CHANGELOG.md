@@ -45,6 +45,9 @@ app que consome o pacote, configurado em `l10n.yaml`.
   erro desconhecido tinha `'Unknown error'` como reserva enquanto a tradução da
   chave dizia "Erro de servidor": dependia do delegate estar registrado para o
   usuário ver uma coisa ou outra. Sobrou a mensagem da chave `serverError`.
+* **`unnamedPlace` em francês estava em italiano** ("Luogo senza nome", herdado
+  do fork original). Agora é "Lieu sans nom". Os outros nove idiomas foram
+  conferidos chave a chave e não tinham troca parecida.
 
 ## 10.1.0
 
