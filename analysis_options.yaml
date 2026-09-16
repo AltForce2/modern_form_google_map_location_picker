@@ -1,10 +1,8 @@
 include: package:flutter_lints/flutter.yaml
 
-analyzer:
-  exclude:
-    # Código gerado pelo plugin Flutter Intl (Localizely). É sobrescrito a cada
-    # regeneração, então corrigir lint aqui à mão não se sustenta.
-    - lib/generated/**
+# O código de l10n gerado por `flutter gen-l10n` (em `lib/l10n/`) não precisa de
+# exclusão: o próprio gerador escreve `// ignore_for_file: type=lint` no topo de
+# cada arquivo.
 
 # Additional information about this file can be found at
 # https://dart.dev/guides/language/analysis-options

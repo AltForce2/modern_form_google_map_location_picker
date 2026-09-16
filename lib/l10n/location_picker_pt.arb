@@ -1,0 +1,17 @@
+{
+  "@@locale": "pt",
+  "pleaseCheckYourConnection": "Por favor, verifique sua conexão",
+  "serverError": "Erro de servidor",
+  "unableToLoadTheMap": "Não foi possível carregar o mapa",
+  "accessToLocationDenied": "Acesso a localização negado",
+  "allowAccessToTheLocationServices": "Permitir acesso aos serviços de localização.",
+  "accessToLocationPermanentlyDenied": "Acesso ao local negado permanentemente",
+  "allowAccessToTheLocationServicesFromSettings": "Permita o acesso aos serviços de localização para este aplicativo usando as configurações do dispositivo.",
+  "ok": "Ok",
+  "cantGetCurrentLocation": "Não é possível obter a localização atual",
+  "pleaseMakeSureYouEnableGpsAndTryAgain": "Certifique-se de ativar o GPS e tente novamente",
+  "searchPlace": "Pesquisar endereço",
+  "findingPlace": "Encontrando lugar...",
+  "noResultFound": "Nenhum resultado encontrado",
+  "unnamedPlace": "Lugar sem nome"
+}

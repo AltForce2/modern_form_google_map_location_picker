@@ -1,3 +1,54 @@
+## 11.0.0
+
+### i18n passou para o `gen-l10n` do SDK
+
+O pacote gerava os textos com o plugin Flutter Intl (Localizely), que produzia a
+classe `S` em `lib/generated/`. Agora usa `flutter gen-l10n`, o mesmo gerador do
+app que consome o pacote, configurado em `l10n.yaml`.
+
+#### Breaking changes
+
+* **A classe `S` e o caminho `package:google_map_location_picker/generated/l10n.dart`
+  deixaram de existir.** O delegate passou a ser
+  `GoogleMapLocationPickerLocalizations.delegate`, exportado pelo barrel do pacote:
+
+  ```dart
+  // antes
+  import 'package:google_map_location_picker/generated/l10n.dart' as location_picker;
+  localizationsDelegates: const [location_picker.S.delegate, ...]
+
+  // agora
+  import 'package:google_map_location_picker/google_map_location_picker.dart';
+  localizationsDelegates: const [GoogleMapLocationPickerLocalizations.delegate, ...]
+  ```
+
+* **Registrar o delegate virou obrigatório.** Antes cada ponto de uso tinha um
+  literal em inglês de reserva (`S.of(context)?.chave ?? 'fallback'`) e a tela
+  seguia em inglês quando o delegate faltava. Com `nullable-getter: false` o
+  texto vem sempre do ARB, então `GoogleMapLocationPickerLocalizations.of(context)`
+  lança se o delegate não estiver em `localizationsDelegates`.
+
+* Os arquivos de tradução foram renomeados de `lib/l10n/intl_<locale>.arb` para
+  `lib/l10n/location_picker_<locale>.arb` e as chaves passaram de `snake_case`
+  para `lowerCamelCase` (`search_place` virou `searchPlace`), porque o `gen-l10n`
+  usa a chave como nome do getter. Os dez idiomas do fork (ar, de, en, es, fr,
+  it, pt, ru, sr, tr) foram preservados; chave sem tradução num idioma cai no
+  template inglês, como antes.
+
+#### Correções
+
+* **A tela de falha do mapa parou de dizer "Erro de servidor".** O WebView usado
+  no desktop e na web reusava a chave genérica `server_error` quando o HTML do
+  mapa não carregava. Agora usa `unableToLoadTheMap` ("Não foi possível carregar
+  o mapa"), nova nos três idiomas do app.
+* **O card de endereço parou de prometer um texto que não entregava.** O ramo de
+  erro desconhecido tinha `'Unknown error'` como reserva enquanto a tradução da
+  chave dizia "Erro de servidor": dependia do delegate estar registrado para o
+  usuário ver uma coisa ou outra. Sobrou a mensagem da chave `serverError`.
+* **`unnamedPlace` em francês estava em italiano** ("Luogo senza nome", herdado
+  do fork original). Agora é "Lieu sans nom". Os outros nove idiomas foram
+  conferidos chave a chave e não tinham troca parecida.
+
 ## 10.1.0
 
 * **Adicionado `cameraIdleDebounce`** em `showLocationPicker`, `LocationPicker` e `MapPicker` — default 400 ms. Arrastar o mapa em etapas dispara um `onCameraIdle` por pausa, e cada um era um geocode cobrado; agora só a posição onde o usuário de fato parou é consultada. `Duration.zero` restaura o comportamento anterior.

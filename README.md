@@ -26,26 +26,33 @@ Pubspec changes:
 ```
 
 
-For message localization inside the library please add in `MaterialApp`
+The library texts come from `flutter gen-l10n` (see `l10n.yaml` and `lib/l10n/*.arb`).
+Registering the delegate in `MaterialApp` is **required**: the picker reads its texts
+through `GoogleMapLocationPickerLocalizations.of(context)`, which throws when the
+delegate is missing.
 
 ```dart
-import 'package:google_map_location_picker/generated/l10n.dart' as location_picker;
+import 'package:google_map_location_picker/google_map_location_picker.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 MaterialApp(
   localizationsDelegates: const [
-    location_picker.S.delegate,
+    GoogleMapLocationPickerLocalizations.delegate,
     GlobalMaterialLocalizations.delegate,
     GlobalWidgetsLocalizations.delegate,
     GlobalCupertinoLocalizations.delegate,
   ],
   supportedLocales: const <Locale>[
     Locale('en', ''),
-    Locale('ar', ''),
+    Locale('pt', ''),
+    Locale('es', ''),
   ],
   home: ...
 )
 ```
+
+Supported locales ship with the package: `ar`, `de`, `en`, `es`, `fr`, `it`, `pt`,
+`ru`, `sr` and `tr`. Missing keys in a locale fall back to the `en` template.
 
 ```dart
 import 'package:google_map_location_picker/google_map_location_picker.dart';

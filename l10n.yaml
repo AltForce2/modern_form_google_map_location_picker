@@ -1,0 +1,18 @@
+# Gerador de i18n do SDK (`flutter gen-l10n`), o mesmo que o app usa. Substitui
+# o plugin Flutter Intl (Localizely), que gerava a classe `S` em
+# `lib/generated/`.
+arb-dir: lib/l10n
+
+# O texto deste fork nasce em inglês, então o inglês é o template: é dele que os
+# idiomas sem tradução herdam a mensagem.
+template-arb-file: location_picker_en.arb
+
+# Nomes próprios porque isto é uma BIBLIOTECA: o arquivo e a classe gerados aqui
+# convivem no mesmo app com os do host, que usa os nomes padrão
+# (`app_localizations.dart` / `AppLocalizations`).
+output-localization-file: location_picker_localizations.dart
+output-class: GoogleMapLocationPickerLocalizations
+
+# Getter não anulável, como no app: o texto vem sempre do ARB, sem literal de
+# fallback espalhado pelos widgets.
+nullable-getter: false

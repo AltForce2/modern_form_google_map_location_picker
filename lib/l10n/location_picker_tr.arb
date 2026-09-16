@@ -1,0 +1,16 @@
+{
+  "@@locale": "tr",
+  "pleaseCheckYourConnection": "Lütfen bağlantınızı kontrol edin",
+  "serverError": "Sunucu hatası",
+  "accessToLocationDenied": "Konum erişimi reddedildi",
+  "allowAccessToTheLocationServices": "Konum servislerine izin verin.",
+  "accessToLocationPermanentlyDenied": "Konuma erişim kalıcı olarak reddedildi",
+  "allowAccessToTheLocationServicesFromSettings": "Cihaz ayarlarını kullanarak bu Uygulama için konum hizmetlerine erişime izin verin.",
+  "ok": "Tamam",
+  "cantGetCurrentLocation": "Geçerli konum alınamıyor",
+  "pleaseMakeSureYouEnableGpsAndTryAgain": "Lütfen GPS’i etkinleştirin ve tekrar deneyin.",
+  "searchPlace": "Konum ara",
+  "findingPlace": "Yer aranıyor...",
+  "noResultFound": "Sonuç Bulunamadı",
+  "unnamedPlace": "Adsız yer"
+}
