@@ -5,7 +5,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:google_map_location_picker/generated/l10n.dart';
+import 'package:google_map_location_picker/l10n/location_picker_localizations.dart';
 import 'package:google_map_location_picker/src/providers/location_provider.dart';
 import 'package:google_map_location_picker/src/utils/debouncer.dart';
 import 'package:google_map_location_picker/src/utils/loading_builder.dart';
@@ -382,7 +382,9 @@ class MapPickerState extends State<MapPicker> {
                         ),
                         builder: (context, data) {
                           return Text(
-                            data?.address ?? S.of(context)?.unnamedPlace ?? 'Unnamed place',
+                            data?.address ??
+                                GoogleMapLocationPickerLocalizations.of(context)
+                                    .unnamedPlace,
                             style: TextStyle(fontSize: fontSize),
                             maxLines: maxLines,
                             overflow: TextOverflow.ellipsis,
@@ -493,23 +495,21 @@ class MapPickerState extends State<MapPicker> {
   }
 
   Future<void> _showDeniedDialog() {
+    final GoogleMapLocationPickerLocalizations texts =
+        GoogleMapLocationPickerLocalizations.of(context);
     return _showPermissionDialog(
-      title: S.of(context)?.access_to_location_denied ??
-          'Access to location denied',
-      message: S.of(context)?.allow_access_to_the_location_services ??
-          'Allow access to the location services.',
+      title: texts.accessToLocationDenied,
+      message: texts.allowAccessToTheLocationServices,
       onConfirm: _initCurrentLocation,
     );
   }
 
   Future<void> _showDeniedForeverDialog() {
+    final GoogleMapLocationPickerLocalizations texts =
+        GoogleMapLocationPickerLocalizations.of(context);
     return _showPermissionDialog(
-      title: S.of(context)?.access_to_location_permanently_denied ??
-          'Access to location permanently denied',
-      message:
-          S.of(context)?.allow_access_to_the_location_services_from_settings ??
-              'Allow access to the location services for this App using the '
-                  'device settings.',
+      title: texts.accessToLocationPermanentlyDenied,
+      message: texts.allowAccessToTheLocationServicesFromSettings,
       onConfirm: Geolocator.openAppSettings,
     );
   }
@@ -527,7 +527,7 @@ class MapPickerState extends State<MapPicker> {
       builder: (dialogContext) => _LocationPermissionDialog(
         title: title,
         message: message,
-        confirmLabel: S.of(dialogContext)?.ok ?? 'Ok',
+        confirmLabel: GoogleMapLocationPickerLocalizations.of(dialogContext).ok,
         onConfirm: onConfirm,
       ),
     ).whenComplete(() => _permissionDialogOpen = false);

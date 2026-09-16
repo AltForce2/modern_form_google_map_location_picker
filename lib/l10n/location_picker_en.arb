@@ -1,0 +1,59 @@
+{
+  "@@locale": "en",
+  "pleaseCheckYourConnection": "Please check your connection",
+  "@pleaseCheckYourConnection": {
+    "description": "Erro exibido no card de endereço quando o geocode falha por falta de conexão."
+  },
+  "serverError": "Server error",
+  "@serverError": {
+    "description": "Erro exibido no card de endereço quando o geocode falha por um motivo desconhecido."
+  },
+  "unableToLoadTheMap": "Unable to load the map",
+  "@unableToLoadTheMap": {
+    "description": "Erro exibido no lugar do mapa quando o HTML do mapa (WebView, usado no desktop e na web) não carrega."
+  },
+  "accessToLocationDenied": "Access to location denied",
+  "@accessToLocationDenied": {
+    "description": "Título do diálogo exibido quando o usuário nega a permissão de localização."
+  },
+  "allowAccessToTheLocationServices": "Allow access to the location services.",
+  "@allowAccessToTheLocationServices": {
+    "description": "Mensagem do diálogo exibido quando o usuário nega a permissão de localização."
+  },
+  "accessToLocationPermanentlyDenied": "Access to location permanently denied",
+  "@accessToLocationPermanentlyDenied": {
+    "description": "Título do diálogo exibido quando a permissão de localização foi negada permanentemente."
+  },
+  "allowAccessToTheLocationServicesFromSettings": "Allow access to the location services for this App using the device settings.",
+  "@allowAccessToTheLocationServicesFromSettings": {
+    "description": "Mensagem do diálogo de permissão negada permanentemente, que manda liberar o acesso pelas configurações do aparelho."
+  },
+  "ok": "Ok",
+  "@ok": {
+    "description": "Rótulo do botão de confirmação dos diálogos de permissão de localização."
+  },
+  "cantGetCurrentLocation": "Can't get current location",
+  "@cantGetCurrentLocation": {
+    "description": "Aviso de que a localização atual não pôde ser obtida. Sem ponto de uso no pacote hoje, mantido porque já tem tradução nos dez idiomas do fork."
+  },
+  "pleaseMakeSureYouEnableGpsAndTryAgain": "Please make sure you enable GPS and try again",
+  "@pleaseMakeSureYouEnableGpsAndTryAgain": {
+    "description": "Complemento do aviso de localização indisponível. Sem ponto de uso no pacote hoje, mantido porque já tem tradução nos dez idiomas do fork."
+  },
+  "searchPlace": "Search place",
+  "@searchPlace": {
+    "description": "Placeholder do campo de busca de endereço, usado quando o widget não recebe `hintText`."
+  },
+  "findingPlace": "Finding place...",
+  "@findingPlace": {
+    "description": "Overlay exibido enquanto a coordenada ou o link do Maps colado na busca é resolvido."
+  },
+  "noResultFound": "No result found",
+  "@noResultFound": {
+    "description": "Item exibido na lista de sugestões quando a busca não devolve nenhum endereço."
+  },
+  "unnamedPlace": "Unnamed place",
+  "@unnamedPlace": {
+    "description": "Texto do card de endereço quando o ponto selecionado não tem endereço conhecido."
+  }
+}

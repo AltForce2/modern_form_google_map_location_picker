@@ -1,0 +1,14 @@
+{
+  "@@locale": "ru",
+  "pleaseCheckYourConnection": "Пожалуйста, проверьте ваше соединение",
+  "serverError": "Ошибка сервера",
+  "accessToLocationDenied": "Доступ к местоположению запрещен",
+  "allowAccessToTheLocationServices": "Разрешить доступ к службам определения местоположения.",
+  "accessToLocationPermanentlyDenied": "Доступ к местоположению запрещен навсегда",
+  "allowAccessToTheLocationServicesFromSettings": "Разрешите доступ к службам определения местоположения для этого приложения в настройках устройства.",
+  "ok": "ОК",
+  "cantGetCurrentLocation": "Невозможно получить текущее местоположение",
+  "pleaseMakeSureYouEnableGpsAndTryAgain": "Пожалуйста, убедитесь, что вы включили GPS и попробуйте снова",
+  "searchPlace": "Поиск места",
+  "unnamedPlace": "Место без названия"
+}

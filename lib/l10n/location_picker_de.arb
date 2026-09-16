@@ -1,0 +1,16 @@
+{
+  "@@locale": "de",
+  "pleaseCheckYourConnection": "Prüfe deine Internetverbindung",
+  "serverError": "Server Fehler",
+  "accessToLocationDenied": "Zugriff auf Standort verweigert",
+  "allowAccessToTheLocationServices": "Erlaube Zugriff auf Standort",
+  "accessToLocationPermanentlyDenied": "Zugriff auf Standort permanent verweigert",
+  "allowAccessToTheLocationServicesFromSettings": "Erlaube den Zugriff auf den Standort über die Geräteeinstellungen.",
+  "ok": "Ok",
+  "cantGetCurrentLocation": "Standort kann nicht abgefragt werden.",
+  "pleaseMakeSureYouEnableGpsAndTryAgain": "Stelle sicher das GPS aktiviert ist und probier es nochmal",
+  "searchPlace": "Suche Ort",
+  "findingPlace": "Finde Orte...",
+  "noResultFound": "Keine Ergebnisse",
+  "unnamedPlace": "unbekannter Ort"
+}

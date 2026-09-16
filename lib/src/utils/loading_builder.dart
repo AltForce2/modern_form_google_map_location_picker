@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_map_location_picker/generated/l10n.dart';
+import 'package:google_map_location_picker/l10n/location_picker_localizations.dart';
 
 import 'log.dart';
 
@@ -79,23 +79,23 @@ class _FutureLoadingBuilderState<T> extends State<FutureLoadingBuilder<T>> {
                 d('SocketException-> ${error.message}');
                 return Center(
                   child: Text(
-                    S.of(context)?.please_check_your_connection ??
-                        'Please check your connection',
+                    GoogleMapLocationPickerLocalizations.of(context)
+                        .pleaseCheckYourConnection,
                     overflow: TextOverflow.fade,
                   ),
                 );
               } else if (error is PlatformException &&
                   error.code == 'ERROR_GEOCODING_COORDINATES') {
                 return Text(
-                  S.of(context)?.please_check_your_connection ??
-                      'Please check your connection',
+                  GoogleMapLocationPickerLocalizations.of(context)
+                      .pleaseCheckYourConnection,
                   overflow: TextOverflow.fade,
                 );
               } else {
                 d('Unknown error: $error');
                 return Center(
                   child: Text(
-                    S.of(context)?.server_error ?? 'Unknown error',
+                    GoogleMapLocationPickerLocalizations.of(context).serverError,
                     overflow: TextOverflow.fade,
                   ),
                 );

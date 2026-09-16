@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:google_map_location_picker/generated/l10n.dart';
+import 'package:google_map_location_picker/l10n/location_picker_localizations.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' show LatLng, MapType;
 
 import '../interface.dart';
@@ -90,7 +90,9 @@ class LocationPickerMapWebView implements LocationPickerMapInterface {
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Text(
-                S.of(context)?.server_error ?? 'Unable to load the map',
+                GoogleMapLocationPickerLocalizations.of(
+                  context,
+                ).unableToLoadTheMap,
                 textAlign: TextAlign.center,
               ),
             ),

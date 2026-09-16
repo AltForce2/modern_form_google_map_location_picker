@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:google_map_location_picker/generated/l10n.dart';
+import 'package:google_map_location_picker/l10n/location_picker_localizations.dart';
 import 'package:google_map_location_picker/src/map.dart';
 import 'package:google_map_location_picker/src/providers/location_provider.dart';
 import 'package:google_map_location_picker/src/rich_suggestion.dart';
@@ -146,7 +146,9 @@ class LocationPickerState extends State<LocationPicker> {
                 SizedBox(width: 24),
                 Expanded(
                   child: Text(
-                    S.of(context)?.finding_place ?? 'Finding place...',
+                    GoogleMapLocationPickerLocalizations.of(
+                      context,
+                    ).findingPlace,
                     style: TextStyle(fontSize: 16),
                   ),
                 ),
@@ -246,7 +248,8 @@ class LocationPickerState extends State<LocationPicker> {
   }
 
   PlaceSuggestion _noResultSuggestion(BuildContext context) => PlaceSuggestion(
-        description: S.of(context)?.no_result_found ?? 'No result found',
+        description:
+            GoogleMapLocationPickerLocalizations.of(context).noResultFound,
       );
 
   /// To navigate to the selected place from the autocomplete list to the map,

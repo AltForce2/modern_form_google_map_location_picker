@@ -1,0 +1,16 @@
+{
+  "@@locale": "ar",
+  "pleaseCheckYourConnection": "تأكد من وجود انترنت",
+  "serverError": "خطأ من الخادم حاول مرة اخري",
+  "accessToLocationDenied": "تم رفض إذن الوصل الي الموقع الجغرافي",
+  "allowAccessToTheLocationServices": "من فضلك قم بقبول إذن الوصول الي الموقع الجغرافي",
+  "accessToLocationPermanentlyDenied": "تم رفض إذن الوصل الي الموقع الجغرافي بشكل نهائي",
+  "allowAccessToTheLocationServicesFromSettings": "من فضلك قم بقبول إذن الوصول الي الموقع الجغرافي من إدادات التطبيق.",
+  "ok": "حسنا",
+  "cantGetCurrentLocation": "لا يمكن الحصول علي الموقع الجغرافي الحالي",
+  "pleaseMakeSureYouEnableGpsAndTryAgain": "الرجاء التاكد من تفعيل الـGPS و المحاولة مرة أخري",
+  "searchPlace": "إبحث بإسم المكان",
+  "findingPlace": "جاري البحث...",
+  "noResultFound": "لم يتم العثور على نتائج",
+  "unnamedPlace": "مكان بدون اسم"
+}

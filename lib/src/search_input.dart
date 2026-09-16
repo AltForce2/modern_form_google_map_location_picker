@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_keyboard_visibility/flutter_keyboard_visibility.dart';
-import 'package:google_map_location_picker/generated/l10n.dart';
+import 'package:google_map_location_picker/l10n/location_picker_localizations.dart';
 
 /// Custom Search input field, showing the search and clear icons.
 class SearchInput extends StatefulWidget {
@@ -92,8 +92,7 @@ class SearchInputState extends State<SearchInput> {
               controller: editController,
               decoration: InputDecoration(
                 hintText: widget.hintText ??
-                    S.of(context)?.search_place ??
-                    'Search place',
+                    GoogleMapLocationPickerLocalizations.of(context).searchPlace,
                 border: InputBorder.none,
               ),
               textCapitalization: TextCapitalization.sentences,

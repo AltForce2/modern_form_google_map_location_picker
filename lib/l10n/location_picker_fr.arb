@@ -1,0 +1,16 @@
+{
+  "@@locale": "fr",
+  "pleaseCheckYourConnection": "Veuillez vérifier votre connexion",
+  "serverError": "Erreur du serveur",
+  "accessToLocationDenied": "Accès à l'emplacement refusé",
+  "allowAccessToTheLocationServices": "Autoriser l'accès aux services de localisation.",
+  "accessToLocationPermanentlyDenied": "Accès à l'emplacement refusé définitivement",
+  "allowAccessToTheLocationServicesFromSettings": "Autorisez l'accès aux services de localisation pour cette application à l'aide des paramètres de l'appareil.",
+  "ok": "D'accord",
+  "cantGetCurrentLocation": "Impossible d'obtenir l'emplacement actuel",
+  "pleaseMakeSureYouEnableGpsAndTryAgain": "Veuillez vous assurer d'activer le GPS et de réessayer",
+  "searchPlace": "Rechercher un lieu",
+  "findingPlace": "En train de trouver un lieu...",
+  "noResultFound": "Aucun résultat trouvé",
+  "unnamedPlace": "Luogo senza nome"
+}
