@@ -12,4 +12,8 @@ export 'src/api/location_picker_api.dart';
 export 'src/api/google_location_picker_api.dart';
 export 'src/api/backend_location_picker_api.dart';
 
+/// Linha de sugestão do autocomplete, para quem desenha a própria lista de
+/// `PlaceSuggestion` com o mesmo visual do picker.
+export 'src/rich_suggestion.dart';
+
 export 'package:geolocator/geolocator.dart';
