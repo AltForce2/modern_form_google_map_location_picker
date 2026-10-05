@@ -187,7 +187,7 @@ nenhuma:
 |---|---|
 | `reverseGeocode` | `GET /geocode/reverse?lat&lng&language` |
 | `forwardGeocode` | `GET /geocode/forward?address&language` |
-| `autocomplete` | `GET /geocode/autocomplete?input&language&sessionToken&countries&lat&lng` |
+| `autocomplete` | `GET /geocode/autocomplete?input&language&sessionToken&countries&lat&lng&radius&strict_bounds` |
 | `placeDetails` | `GET /geocode/place/{placeId}?language&sessionToken` |
 | `resolveMapsUrl` | `GET /geocode/expand-url?url` |
 
@@ -227,6 +227,9 @@ Convenções que a implementação assume:
   deslocaria o pin do ponto marcado. No `forward` e no `place` vale a da
   resposta, porque ali a coordenada *é* o resultado.
 - Autocomplete sem resultado devolve `200` com `suggestions: []`, nunca `404`.
+- No autocomplete, `radius` (metros) e `strict_bounds=true` só saem junto de
+  `lat`/`lng`, quando quem chama passa `locationBiasRadiusInMeters` e
+  `strictBounds`. Sem `radius`, vale o raio padrão do servidor.
 - Todos os campos de endereço podem vir `null`.
 
 ### Caminho customizado

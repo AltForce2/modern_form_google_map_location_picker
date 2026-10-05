@@ -132,6 +132,8 @@ Sugestões para o campo de busca do picker.
 | `sessionToken` | string | não | Ver "billing por sessão" abaixo |
 | `countries` | string | não | CSV de códigos ISO 3166-1 alpha-2, **máximo 5** (limite do Google) |
 | `lat`, `lng` | number | não | Viés de proximidade — o picker envia o centro atual do mapa |
+| `radius` | number | não | Raio do viés em metros, entre `1000` e `50000`. Ausente = `50000`. Só vai junto de `lat`/`lng` |
+| `strict_bounds` | boolean | não | `true` restringe as sugestões ao círculo de `lat`/`lng` + `radius` (no Google, `strictbounds`). Só vai junto de `lat`/`lng` |
 
 ### Resposta `200`
 

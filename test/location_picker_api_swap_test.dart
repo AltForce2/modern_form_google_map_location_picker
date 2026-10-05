@@ -56,6 +56,8 @@ class _FakeBackendApi extends LocationPickerApi {
     required String sessionToken,
     List<String>? countries,
     LatLng? locationBias,
+    int? locationBiasRadiusInMeters,
+    bool strictBounds = false,
   }) async {
     autocompleteCalls++;
     return <PlaceSuggestion>[

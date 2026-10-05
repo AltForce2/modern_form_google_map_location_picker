@@ -344,6 +344,52 @@ void main() {
 
       expect(requests.single.queryParameters.containsKey('countries'), isFalse);
       expect(requests.single.queryParameters.containsKey('lat'), isFalse);
+      expect(requests.single.queryParameters.containsKey('radius'), isFalse);
+      expect(
+        requests.single.queryParameters.containsKey('strict_bounds'),
+        isFalse,
+      );
+    });
+
+    test('envia raio e restrição ao círculo junto do viés', () async {
+      final api = apiWith((_) async => http.Response(
+            jsonEncode({'suggestions': <dynamic>[]}),
+            200,
+          ));
+
+      await api.autocomplete(
+        apiKey: 'k',
+        input: 'hotel',
+        language: 'pt-BR',
+        sessionToken: 't',
+        locationBias: ponto,
+        locationBiasRadiusInMeters: 15000,
+        strictBounds: true,
+      );
+
+      final q = requests.single.queryParameters;
+      expect(q['radius'], '15000');
+      expect(q['strict_bounds'], 'true');
+    });
+
+    test('sem viés, raio e restrição não saem', () async {
+      final api = apiWith((_) async => http.Response(
+            jsonEncode({'suggestions': <dynamic>[]}),
+            200,
+          ));
+
+      await api.autocomplete(
+        apiKey: 'k',
+        input: 'hotel',
+        language: 'pt-BR',
+        sessionToken: 't',
+        locationBiasRadiusInMeters: 15000,
+        strictBounds: true,
+      );
+
+      final q = requests.single.queryParameters;
+      expect(q.containsKey('radius'), isFalse);
+      expect(q.containsKey('strict_bounds'), isFalse);
     });
   });
 

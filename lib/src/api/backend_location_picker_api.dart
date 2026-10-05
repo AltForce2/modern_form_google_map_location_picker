@@ -36,7 +36,7 @@ typedef LocationPickerHeadersBuilder = Future<Map<String, String>> Function();
 /// |---|---|
 /// | [reverseGeocode] | `GET /geocode/reverse?lat&lng&language` |
 /// | [forwardGeocode] | `GET /geocode/forward?address&language` |
-/// | [autocomplete] | `GET /geocode/autocomplete?input&language&sessionToken&countries&lat&lng` |
+/// | [autocomplete] | `GET /geocode/autocomplete?input&language&sessionToken&countries&lat&lng&radius&strict_bounds` |
 /// | [placeDetails] | `GET /geocode/place/{placeId}?language&sessionToken` |
 /// | [resolveMapsUrl] | `GET /geocode/expand-url?url` |
 ///
@@ -121,7 +121,12 @@ class BackendLocationPickerApi extends LocationPickerApi {
     required String sessionToken,
     List<String>? countries,
     LatLng? locationBias,
+    int? locationBiasRadiusInMeters,
+    bool strictBounds = false,
   }) async {
+    // Raio e restrição descrevem o círculo em volta de lat/lng: sem o centro
+    // não há círculo, então nem saem. Sem raio, o servidor usa os 50 km dele.
+    final bool hasBias = locationBias != null;
     final Map<String, dynamic>? body = await _get(
       '/geocode/autocomplete',
       <String, String?>{
@@ -133,6 +138,8 @@ class BackendLocationPickerApi extends LocationPickerApi {
             : null,
         'lat': locationBias?.latitude.toString(),
         'lng': locationBias?.longitude.toString(),
+        'radius': hasBias ? locationBiasRadiusInMeters?.toString() : null,
+        'strict_bounds': (hasBias && strictBounds) ? 'true' : null,
       },
       'autocomplete',
     );

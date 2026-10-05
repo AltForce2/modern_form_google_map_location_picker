@@ -67,6 +67,9 @@ class GoogleLocationPickerApi extends LocationPickerApi {
   /// Places Autocomplete filtra por até 5 países.
   static const int _maxCountries = 5;
 
+  /// Raio máximo do Places Autocomplete, em metros.
+  static const int _maxAutocompleteRadiusInMeters = 50000;
+
   static const MethodChannel _platform =
       MethodChannel('google_map_location_picker');
   static Map<String, String> _appHeaderCache = {};
@@ -151,6 +154,8 @@ class GoogleLocationPickerApi extends LocationPickerApi {
     required String sessionToken,
     List<String>? countries,
     LatLng? locationBias,
+    int? locationBiasRadiusInMeters,
+    bool strictBounds = false,
   }) async {
     final Map<String, String> parameters = <String, String>{
       'key': apiKey,
@@ -168,6 +173,13 @@ class GoogleLocationPickerApi extends LocationPickerApi {
     if (locationBias != null) {
       parameters['location'] =
           '${locationBias.latitude},${locationBias.longitude}';
+
+      // O Google exige `radius` para o `strictbounds` valer; sem raio
+      // informado, a restrição usa o teto do Autocomplete.
+      final int? radius = locationBiasRadiusInMeters ??
+          (strictBounds ? _maxAutocompleteRadiusInMeters : null);
+      if (radius != null) parameters['radius'] = radius.toString();
+      if (strictBounds) parameters['strictbounds'] = 'true';
     }
 
     final Map<String, dynamic>? body =

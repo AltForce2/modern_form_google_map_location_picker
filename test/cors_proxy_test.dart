@@ -121,6 +121,41 @@ void main() {
       expect(q['input'], 'Avenida Ipê');
       expect(q['sessiontoken'], 'sess-1');
       expect(q['language'], 'pt-BR');
+      expect(q.containsKey('radius'), isFalse);
+      expect(q.containsKey('strictbounds'), isFalse);
+    });
+
+    test('o autocomplete envia raio e restrição junto do viés', () async {
+      await const GoogleLocationPickerApi().autocomplete(
+        apiKey: 'k',
+        input: 'hotel',
+        language: 'pt-BR',
+        sessionToken: 'sess-1',
+        locationBias: const LatLng(-24.0, -52.4),
+        locationBiasRadiusInMeters: 15000,
+        strictBounds: true,
+      );
+
+      final q = requests.single.queryParameters;
+      expect(q['location'], '-24.0,-52.4');
+      expect(q['radius'], '15000');
+      expect(q['strictbounds'], 'true');
+    });
+
+    test('restrição sem raio usa o teto do Autocomplete', () async {
+      // Sem `radius` o Google ignora o `location`, e a restrição não valeria.
+      await const GoogleLocationPickerApi().autocomplete(
+        apiKey: 'k',
+        input: 'hotel',
+        language: 'pt-BR',
+        sessionToken: 'sess-1',
+        locationBias: const LatLng(-24.0, -52.4),
+        strictBounds: true,
+      );
+
+      final q = requests.single.queryParameters;
+      expect(q['radius'], '50000');
+      expect(q['strictbounds'], 'true');
     });
   });
 }

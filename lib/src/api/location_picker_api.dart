@@ -106,6 +106,12 @@ abstract class LocationPickerApi {
   ///
   /// [sessionToken] existe por causa do billing por sessão do Places; uma
   /// implementação própria pode ignorá-lo.
+  ///
+  /// [locationBiasRadiusInMeters] é o raio do círculo em volta de
+  /// [locationBias] (até 50.000 m, o teto do Places Autocomplete); sem ele vale
+  /// o padrão da implementação. [strictBounds] troca o viés por restrição:
+  /// sugestão fora do círculo não volta. Os dois só têm efeito com
+  /// [locationBias].
   Future<List<PlaceSuggestion>> autocomplete({
     required String apiKey,
     required String input,
@@ -113,6 +119,8 @@ abstract class LocationPickerApi {
     required String sessionToken,
     List<String>? countries,
     LatLng? locationBias,
+    int? locationBiasRadiusInMeters,
+    bool strictBounds = false,
   });
 
   /// Detalhes da sugestão escolhida. O [placeId] é o [PlaceSuggestion.id]
