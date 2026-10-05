@@ -106,6 +106,16 @@ abstract class LocationPickerApi {
   ///
   /// [sessionToken] existe por causa do billing por sessão do Places; uma
   /// implementação própria pode ignorá-lo.
+  ///
+  /// [locationBiasRadiusInMeters] é o raio do círculo em volta de
+  /// [locationBias] (até 50.000 m, o teto do Places Autocomplete); sem ele vale
+  /// o padrão da implementação. As implementações do pacote limitam o raio
+  /// antes de enviar — ao teto do Google em [GoogleLocationPickerApi] e à
+  /// faixa de 1.000 a 50.000 m no servidor — e uma implementação própria deve
+  /// fazer o mesmo, já que raio fora da faixa costuma ser recusado e a busca
+  /// volta vazia. [strictBounds] troca o viés por restrição:
+  /// sugestão fora do círculo não volta. Os dois só têm efeito com
+  /// [locationBias].
   Future<List<PlaceSuggestion>> autocomplete({
     required String apiKey,
     required String input,
@@ -113,6 +123,8 @@ abstract class LocationPickerApi {
     required String sessionToken,
     List<String>? countries,
     LatLng? locationBias,
+    int? locationBiasRadiusInMeters,
+    bool strictBounds = false,
   });
 
   /// Detalhes da sugestão escolhida. O [placeId] é o [PlaceSuggestion.id]

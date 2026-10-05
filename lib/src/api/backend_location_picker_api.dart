@@ -36,7 +36,7 @@ typedef LocationPickerHeadersBuilder = Future<Map<String, String>> Function();
 /// |---|---|
 /// | [reverseGeocode] | `GET /geocode/reverse?lat&lng&language` |
 /// | [forwardGeocode] | `GET /geocode/forward?address&language` |
-/// | [autocomplete] | `GET /geocode/autocomplete?input&language&sessionToken&countries&lat&lng` |
+/// | [autocomplete] | `GET /geocode/autocomplete?input&language&sessionToken&countries&lat&lng&radius&strict_bounds` |
 /// | [placeDetails] | `GET /geocode/place/{placeId}?language&sessionToken` |
 /// | [resolveMapsUrl] | `GET /geocode/expand-url?url` |
 ///
@@ -60,6 +60,10 @@ class BackendLocationPickerApi extends LocationPickerApi {
   final http.Client httpClient;
 
   final Duration timeout;
+
+  /// Faixa do raio aceita por `GET /geocode/autocomplete`, em metros.
+  static const int _minAutocompleteRadiusInMeters = 1000;
+  static const int _maxAutocompleteRadiusInMeters = 50000;
 
   static String _stripTrailingSlash(String url) =>
       url.endsWith('/') ? url.substring(0, url.length - 1) : url;
@@ -121,7 +125,17 @@ class BackendLocationPickerApi extends LocationPickerApi {
     required String sessionToken,
     List<String>? countries,
     LatLng? locationBias,
+    int? locationBiasRadiusInMeters,
+    bool strictBounds = false,
   }) async {
+    // Raio e restrição descrevem o círculo em volta de lat/lng: sem o centro
+    // não há círculo, então nem saem. Sem raio, o servidor usa os 50 km dele;
+    // com raio, ele sai já limitado à faixa que o servidor aceita.
+    final bool hasBias = locationBias != null;
+    final int? radius = locationBiasRadiusInMeters?.clamp(
+      _minAutocompleteRadiusInMeters,
+      _maxAutocompleteRadiusInMeters,
+    );
     final Map<String, dynamic>? body = await _get(
       '/geocode/autocomplete',
       <String, String?>{
@@ -133,6 +147,8 @@ class BackendLocationPickerApi extends LocationPickerApi {
             : null,
         'lat': locationBias?.latitude.toString(),
         'lng': locationBias?.longitude.toString(),
+        'radius': hasBias ? radius?.toString() : null,
+        'strict_bounds': (hasBias && strictBounds) ? 'true' : null,
       },
       'autocomplete',
     );
