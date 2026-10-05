@@ -157,5 +157,31 @@ void main() {
       expect(q['radius'], '50000');
       expect(q['strictbounds'], 'true');
     });
+
+    test('raio acima do teto sai limitado a 50000', () async {
+      await const GoogleLocationPickerApi().autocomplete(
+        apiKey: 'k',
+        input: 'hotel',
+        language: 'pt-BR',
+        sessionToken: 'sess-1',
+        locationBias: const LatLng(-24.0, -52.4),
+        locationBiasRadiusInMeters: 80000,
+      );
+
+      expect(requests.single.queryParameters['radius'], '50000');
+    });
+
+    test('raio zero sai como 1', () async {
+      await const GoogleLocationPickerApi().autocomplete(
+        apiKey: 'k',
+        input: 'hotel',
+        language: 'pt-BR',
+        sessionToken: 'sess-1',
+        locationBias: const LatLng(-24.0, -52.4),
+        locationBiasRadiusInMeters: 0,
+      );
+
+      expect(requests.single.queryParameters['radius'], '1');
+    });
   });
 }

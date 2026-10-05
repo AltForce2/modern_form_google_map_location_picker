@@ -1,3 +1,10 @@
+## 10.5.0
+
+* **Adicionados `locationBiasRadiusInMeters` e `strictBounds` em `LocationPickerApi.autocomplete`** — o raio do círculo em volta de `locationBias` e a restrição a esse círculo (sugestão fora dele não volta). Os dois só têm efeito com `locationBias`; quem não os passa continua mandando a mesma requisição de antes.
+  * `BackendLocationPickerApi` envia `radius` e `strict_bounds=true` em `GET /geocode/autocomplete`, com o raio limitado à faixa de 1.000 a 50.000 m. Sem raio, vale o padrão do servidor.
+  * `GoogleLocationPickerApi` envia `radius` e `strictbounds=true`, com o raio limitado ao teto de 50.000 m do Places Autocomplete — fora dele o Google responde `INVALID_REQUEST` e a busca voltaria vazia. Como o Google ignora `location` sem `radius`, a restrição sem raio informado usa o teto.
+* **Quebra para implementações próprias de `LocationPickerApi`: o override de `autocomplete` precisa declarar `int? locationBiasRadiusInMeters` e `bool strictBounds = false`**, mesmo ignorando os dois — sem eles o Dart recusa o override ("isn't a valid override"). A assinatura completa está no README, em "Caminho customizado".
+
 ## 10.1.0
 
 * **Adicionado `cameraIdleDebounce`** em `showLocationPicker`, `LocationPicker` e `MapPicker` — default 400 ms. Arrastar o mapa em etapas dispara um `onCameraIdle` por pausa, e cada um era um geocode cobrado; agora só a posição onde o usuário de fato parou é consultada. `Duration.zero` restaura o comportamento anterior.

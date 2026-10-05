@@ -372,6 +372,29 @@ void main() {
       expect(q['strict_bounds'], 'true');
     });
 
+    test('raio sai limitado à faixa de 1000 a 50000', () async {
+      final api = apiWith((_) async => http.Response(
+            jsonEncode({'suggestions': <dynamic>[]}),
+            200,
+          ));
+
+      Future<String?> radiusSent(int radius) async {
+        requests.clear();
+        await api.autocomplete(
+          apiKey: 'k',
+          input: 'hotel',
+          language: 'pt-BR',
+          sessionToken: 't',
+          locationBias: ponto,
+          locationBiasRadiusInMeters: radius,
+        );
+        return requests.single.queryParameters['radius'];
+      }
+
+      expect(await radiusSent(80000), '50000');
+      expect(await radiusSent(200), '1000');
+    });
+
     test('sem viés, raio e restrição não saem', () async {
       final api = apiWith((_) async => http.Response(
             jsonEncode({'suggestions': <dynamic>[]}),

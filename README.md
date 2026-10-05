@@ -229,7 +229,8 @@ Convenções que a implementação assume:
 - Autocomplete sem resultado devolve `200` com `suggestions: []`, nunca `404`.
 - No autocomplete, `radius` (metros) e `strict_bounds=true` só saem junto de
   `lat`/`lng`, quando quem chama passa `locationBiasRadiusInMeters` e
-  `strictBounds`. Sem `radius`, vale o raio padrão do servidor.
+  `strictBounds`. Sem `radius`, vale o raio padrão do servidor; com ele, o
+  raio sai limitado à faixa de 1000 a 50000 m.
 - Todos os campos de endereço podem vir `null`.
 
 ### Caminho customizado
@@ -285,6 +286,27 @@ Pontos que valem saber:
   Flutter Web por CORS. Um backend resolve isso.
 - Para trocar apenas o cliente HTTP (proxy, interceptador) sem reimplementar
   nada, use `GoogleLocationPickerApi.httpClient`.
+- **A partir da 10.5.0, o override de `autocomplete` precisa declarar
+  `int? locationBiasRadiusInMeters` e `bool strictBounds = false`**, mesmo que
+  a sua implementação ignore os dois. Sem eles o Dart recusa o override
+  ("isn't a valid override") e o app para de compilar. Se usar o raio, limite-o
+  antes de enviar (o Places Autocomplete aceita até 50.000 m):
+
+  ```dart
+  @override
+  Future<List<PlaceSuggestion>> autocomplete({
+    required String apiKey,
+    required String input,
+    required String language,
+    required String sessionToken,
+    List<String>? countries,
+    LatLng? locationBias,
+    int? locationBiasRadiusInMeters,
+    bool strictBounds = false,
+  }) async {
+    // ...
+  }
+  ```
 
 ## Credits
 

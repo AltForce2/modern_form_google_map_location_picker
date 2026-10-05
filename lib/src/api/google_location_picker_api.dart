@@ -175,9 +175,12 @@ class GoogleLocationPickerApi extends LocationPickerApi {
           '${locationBias.latitude},${locationBias.longitude}';
 
       // O Google exige `radius` para o `strictbounds` valer; sem raio
-      // informado, a restrição usa o teto do Autocomplete.
-      final int? radius = locationBiasRadiusInMeters ??
-          (strictBounds ? _maxAutocompleteRadiusInMeters : null);
+      // informado, a restrição usa o teto do Autocomplete. O raio é limitado a
+      // esse teto: fora dele o Google responde INVALID_REQUEST e a busca
+      // voltaria vazia.
+      final int? radius = (locationBiasRadiusInMeters ??
+              (strictBounds ? _maxAutocompleteRadiusInMeters : null))
+          ?.clamp(1, _maxAutocompleteRadiusInMeters);
       if (radius != null) parameters['radius'] = radius.toString();
       if (strictBounds) parameters['strictbounds'] = 'true';
     }
